@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiSnapshotRouteImport } from './routes/api/snapshot'
+import { Route as ApiChatRouteImport } from './routes/api/chat'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSnapshotRoute = ApiSnapshotRouteImport.update({
+  id: '/api/snapshot',
+  path: '/api/snapshot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiChatRoute = ApiChatRouteImport.update({
+  id: '/api/chat',
+  path: '/api/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/chat': typeof ApiChatRoute
+  '/api/snapshot': typeof ApiSnapshotRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/chat': typeof ApiChatRoute
+  '/api/snapshot': typeof ApiSnapshotRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/chat': typeof ApiChatRoute
+  '/api/snapshot': typeof ApiSnapshotRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/chat' | '/api/snapshot'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/chat' | '/api/snapshot'
+  id: '__root__' | '/' | '/api/chat' | '/api/snapshot'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiChatRoute: typeof ApiChatRoute
+  ApiSnapshotRoute: typeof ApiSnapshotRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,22 +68,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/snapshot': {
+      id: '/api/snapshot'
+      path: '/api/snapshot'
+      fullPath: '/api/snapshot'
+      preLoaderRoute: typeof ApiSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/chat': {
+      id: '/api/chat'
+      path: '/api/chat'
+      fullPath: '/api/chat'
+      preLoaderRoute: typeof ApiChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiChatRoute: ApiChatRoute,
+  ApiSnapshotRoute: ApiSnapshotRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
