@@ -72,14 +72,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "oracle alpha" },
+      { name: "description", content: "Oracle Alpha ∞ is an institutional-grade AI for financial market analysis, intelligence, and probabilistic forecasting." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "oracle alpha" },
+      { property: "og:description", content: "Oracle Alpha ∞ is an institutional-grade AI for financial market analysis, intelligence, and probabilistic forecasting." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "oracle alpha" },
+      { name: "twitter:description", content: "Oracle Alpha ∞ is an institutional-grade AI for financial market analysis, intelligence, and probabilistic forecasting." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/af67cf53-269c-4895-80b4-18112feb92ab/id-preview-fd794da7--cd5a5773-d49d-453f-b590-890525339e33.lovable.app-1779240226024.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/af67cf53-269c-4895-80b4-18112feb92ab/id-preview-fd794da7--cd5a5773-d49d-453f-b590-890525339e33.lovable.app-1779240226024.png" },
     ],
     links: [
       {
