@@ -1,7 +1,8 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { useEffect, useRef, useState } from "react";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import ReactMarkdown from "react-markdown";
+import { saveMessages } from "@/lib/threads";
 
 const AGENTS = [
   { k: "QUANT", c: "oklch(0.78 0.18 70)" },
@@ -13,23 +14,36 @@ const AGENTS = [
 ];
 
 const PROMPTS = [
-  "Full macro brief: rates, liquidity, dollar, risk regime.",
-  "Deep multi-agent synthesis on NVDA right now.",
-  "Where is the highest asymmetric upside this week?",
-  "Model the current fear/greed regime in the S&P.",
+  "Full macro brief: rates, liquidity, dollar, fear/greed regime.",
+  "Multi-agent synthesis on NVDA — technicals + behavioral.",
+  "Show top 10 finds right now and explain the leader.",
+  "Behavioral read on TSLA — biases, reflexivity, crowding.",
   "Volatility map: what is VIX pricing vs. realized?",
 ];
 
-export function OracleConsole() {
+export type OracleHandle = { ask: (prompt: string) => void };
+
+export const OracleConsole = forwardRef<OracleHandle, {
+  threadId: string;
+  initialMessages: UIMessage[];
+}>(function OracleConsole({ threadId, initialMessages }, ref) {
   const [transport] = useState(
     () => new DefaultChatTransport({ api: "/api/chat" }),
   );
   const { messages, sendMessage, status, error, stop } = useChat({
+    id: threadId,
+    messages: initialMessages,
     transport,
   });
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Persist to localStorage on every message change.
+  useEffect(() => {
+    if (!threadId) return;
+    saveMessages(threadId, messages as UIMessage[]);
+  }, [messages, threadId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -37,7 +51,7 @@ export function OracleConsole() {
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, [status]);
+  }, [status, threadId]);
 
   const busy = status === "submitted" || status === "streaming";
 
@@ -47,6 +61,8 @@ export function OracleConsole() {
     sendMessage({ text: t });
     setInput("");
   };
+
+  useImperativeHandle(ref, () => ({ ask: (p: string) => submit(p) }), [busy]);
 
   return (
     <div className="flex flex-col h-full border border-border bg-card/60 backdrop-blur">
@@ -71,7 +87,6 @@ export function OracleConsole() {
         </div>
       </div>
 
-      {/* messages */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 py-4 space-y-5 scanlines"
@@ -79,8 +94,8 @@ export function OracleConsole() {
         {messages.length === 0 && (
           <div className="font-mono text-xs text-muted-foreground space-y-4">
             <div>
-              <span className="text-primary">ORACLE://</span> system initialized.
-              All 6 agents online. Connected to NASDAQ / Yahoo Finance feed.
+              <span className="text-primary">ORACLE://</span> session initialized.
+              6 agents online. Memory: this thread persists across reloads.
             </div>
             <div>
               <span className="text-accent">QUERY EXAMPLES:</span>
@@ -108,7 +123,10 @@ export function OracleConsole() {
                 <span className="text-primary">ORACLE://</span>
               )}
             </div>
-            <div className="pl-3 border-l-2" style={{ borderColor: m.role === "user" ? "var(--accent)" : "var(--primary)" }}>
+            <div
+              className="pl-3 border-l-2"
+              style={{ borderColor: m.role === "user" ? "var(--accent)" : "var(--primary)" }}
+            >
               {m.parts.map((p, i) => {
                 if (p.type === "text") {
                   return m.role === "assistant" ? (
@@ -135,9 +153,7 @@ export function OracleConsole() {
                     >
                       <summary className="cursor-pointer px-2 py-1 flex items-center gap-2 list-none">
                         <span className="text-accent">⟐</span>
-                        <span className="text-muted-foreground tracking-wider">
-                          TOOL
-                        </span>
+                        <span className="text-muted-foreground tracking-wider">TOOL</span>
                         <span className="text-primary">{name}</span>
                         <span className="ml-auto text-[10px] text-muted-foreground">
                           {state === "output-available"
@@ -181,7 +197,6 @@ export function OracleConsole() {
         )}
       </div>
 
-      {/* composer */}
       <div className="border-t border-border bg-secondary/40 p-2">
         <div className="flex gap-2">
           <textarea
@@ -217,9 +232,9 @@ export function OracleConsole() {
           </div>
         </div>
         <div className="mt-1 text-[10px] font-mono text-muted-foreground tracking-wider">
-          ⏎ EXEC · ⇧⏎ NEWLINE · NASDAQ/YAHOO FEED · NOT INVESTMENT ADVICE
+          ⏎ EXEC · ⇧⏎ NEWLINE · NASDAQ/YAHOO FEED · MEMORY ON · NOT INVESTMENT ADVICE
         </div>
       </div>
     </div>
   );
-}
+});

@@ -26,44 +26,53 @@ export type Quote = {
   exchange?: string;
 };
 
+async function fetchChartMeta(sym: string): Promise<Quote | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+      sym,
+    )}?interval=1d&range=5d`;
+    const r = await fetch(url, { headers: UA });
+    if (!r.ok) return null;
+    const j = (await r.json()) as any;
+    const res = j?.chart?.result?.[0];
+    const meta = res?.meta;
+    if (!meta) return null;
+    const price = meta.regularMarketPrice;
+    const prev = meta.chartPreviousClose ?? meta.previousClose;
+    const change = price != null && prev != null ? price - prev : undefined;
+    const changePct = change != null && prev ? (change / prev) * 100 : undefined;
+    return {
+      symbol: meta.symbol ?? sym,
+      shortName: meta.shortName,
+      longName: meta.longName,
+      regularMarketPrice: price,
+      regularMarketChange: change,
+      regularMarketChangePercent: changePct,
+      regularMarketVolume: meta.regularMarketVolume,
+      regularMarketDayHigh: meta.regularMarketDayHigh,
+      regularMarketDayLow: meta.regularMarketDayLow,
+      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+      fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+      currency: meta.currency,
+      exchange: meta.exchangeName,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getQuotes(symbols: string[]): Promise<Quote[]> {
   if (!symbols.length) return [];
   const out: Quote[] = [];
-  // Use chart endpoint per-symbol (more reliable than v7/quote which is gated).
+  // Concurrency cap to avoid hammering Yahoo when 40-60 symbols are requested.
+  const CONC = 8;
+  let i = 0;
   await Promise.all(
-    symbols.map(async (sym) => {
-      try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-          sym,
-        )}?interval=1d&range=5d`;
-        const r = await fetch(url, { headers: UA });
-        if (!r.ok) return;
-        const j = (await r.json()) as any;
-        const res = j?.chart?.result?.[0];
-        const meta = res?.meta;
-        if (!meta) return;
-        const price = meta.regularMarketPrice;
-        const prev = meta.chartPreviousClose ?? meta.previousClose;
-        const change = price != null && prev != null ? price - prev : undefined;
-        const changePct =
-          change != null && prev ? (change / prev) * 100 : undefined;
-        out.push({
-          symbol: meta.symbol ?? sym,
-          shortName: meta.shortName,
-          longName: meta.longName,
-          regularMarketPrice: price,
-          regularMarketChange: change,
-          regularMarketChangePercent: changePct,
-          regularMarketVolume: meta.regularMarketVolume,
-          regularMarketDayHigh: meta.regularMarketDayHigh,
-          regularMarketDayLow: meta.regularMarketDayLow,
-          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
-          fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
-          currency: meta.currency,
-          exchange: meta.exchangeName,
-        });
-      } catch {
-        // ignore
+    Array.from({ length: Math.min(CONC, symbols.length) }, async () => {
+      while (i < symbols.length) {
+        const idx = i++;
+        const q = await fetchChartMeta(symbols[idx]);
+        if (q) out.push(q);
       }
     }),
   );
@@ -98,7 +107,7 @@ export async function getHistory(
 export async function searchSymbols(query: string) {
   const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
     query,
-  )}&quotesCount=8&newsCount=4`;
+  )}&quotesCount=10&newsCount=4`;
   const r = await fetch(url, { headers: UA });
   if (!r.ok) throw new Error(`search: ${r.status}`);
   const j = (await r.json()) as any;
@@ -119,19 +128,11 @@ export async function searchSymbols(query: string) {
 }
 
 export async function getMarketSnapshot() {
-  // Key macro tickers
   const tickers = [
-    "^GSPC", // S&P 500
-    "^IXIC", // Nasdaq Composite
-    "^DJI", // Dow
-    "^RUT", // Russell
-    "^VIX", // Volatility
-    "^TNX", // 10Y yield
-    "DX-Y.NYB", // Dollar index
-    "CL=F", // Crude
-    "GC=F", // Gold
-    "BTC-USD",
-    "ETH-USD",
+    "^GSPC", "^IXIC", "^DJI", "^RUT",
+    "^VIX", "^TNX", "DX-Y.NYB",
+    "CL=F", "GC=F",
+    "BTC-USD", "ETH-USD",
   ];
   return getQuotes(tickers);
 }
