@@ -10,7 +10,10 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiTopFindsRouteImport } from './routes/api/top-finds'
+import { Route as ApiTickerRouteImport } from './routes/api/ticker'
 import { Route as ApiSnapshotRouteImport } from './routes/api/snapshot'
+import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 
 const IndexRoute = IndexRouteImport.update({
@@ -18,9 +21,24 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTopFindsRoute = ApiTopFindsRouteImport.update({
+  id: '/api/top-finds',
+  path: '/api/top-finds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTickerRoute = ApiTickerRouteImport.update({
+  id: '/api/ticker',
+  path: '/api/ticker',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSnapshotRoute = ApiSnapshotRouteImport.update({
   id: '/api/snapshot',
   path: '/api/snapshot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSearchRoute = ApiSearchRouteImport.update({
+  id: '/api/search',
+  path: '/api/search',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
@@ -32,31 +50,62 @@ const ApiChatRoute = ApiChatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/search': typeof ApiSearchRoute
   '/api/snapshot': typeof ApiSnapshotRoute
+  '/api/ticker': typeof ApiTickerRoute
+  '/api/top-finds': typeof ApiTopFindsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/search': typeof ApiSearchRoute
   '/api/snapshot': typeof ApiSnapshotRoute
+  '/api/ticker': typeof ApiTickerRoute
+  '/api/top-finds': typeof ApiTopFindsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/search': typeof ApiSearchRoute
   '/api/snapshot': typeof ApiSnapshotRoute
+  '/api/ticker': typeof ApiTickerRoute
+  '/api/top-finds': typeof ApiTopFindsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/chat' | '/api/snapshot'
+  fullPaths:
+    | '/'
+    | '/api/chat'
+    | '/api/search'
+    | '/api/snapshot'
+    | '/api/ticker'
+    | '/api/top-finds'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/chat' | '/api/snapshot'
-  id: '__root__' | '/' | '/api/chat' | '/api/snapshot'
+  to:
+    | '/'
+    | '/api/chat'
+    | '/api/search'
+    | '/api/snapshot'
+    | '/api/ticker'
+    | '/api/top-finds'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/chat'
+    | '/api/search'
+    | '/api/snapshot'
+    | '/api/ticker'
+    | '/api/top-finds'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiSearchRoute: typeof ApiSearchRoute
   ApiSnapshotRoute: typeof ApiSnapshotRoute
+  ApiTickerRoute: typeof ApiTickerRoute
+  ApiTopFindsRoute: typeof ApiTopFindsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -68,11 +117,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/top-finds': {
+      id: '/api/top-finds'
+      path: '/api/top-finds'
+      fullPath: '/api/top-finds'
+      preLoaderRoute: typeof ApiTopFindsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ticker': {
+      id: '/api/ticker'
+      path: '/api/ticker'
+      fullPath: '/api/ticker'
+      preLoaderRoute: typeof ApiTickerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/snapshot': {
       id: '/api/snapshot'
       path: '/api/snapshot'
       fullPath: '/api/snapshot'
       preLoaderRoute: typeof ApiSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/search': {
+      id: '/api/search'
+      path: '/api/search'
+      fullPath: '/api/search'
+      preLoaderRoute: typeof ApiSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/chat': {
@@ -88,7 +158,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiSearchRoute: ApiSearchRoute,
   ApiSnapshotRoute: ApiSnapshotRoute,
+  ApiTickerRoute: ApiTickerRoute,
+  ApiTopFindsRoute: ApiTopFindsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
