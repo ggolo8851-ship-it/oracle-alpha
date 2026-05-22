@@ -40,7 +40,6 @@ import { getNewsCached } from "./news";
 import { getPulseCached } from "./pulse";
 import { computeOracle100 } from "@/lib/oracle100";
 import { REGIONS, SECTORS } from "@/lib/universes";
-import { getQuotes } from "@/lib/yahoo";
 
 const SYSTEM_PROMPT = `You are ORACLE ALPHA ∞ — an institutional-grade recursive financial intelligence system. You operate as a fusion of a quantitative hedge fund, a macroeconomic strategist, a behavioral-finance supercomputer, and a probabilistic forecasting engine.
 
