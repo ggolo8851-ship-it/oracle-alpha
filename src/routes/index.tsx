@@ -7,6 +7,11 @@ import { SymbolSearch } from "@/components/SymbolSearch";
 import { TickerDetail } from "@/components/TickerDetail";
 import { TopFinds } from "@/components/TopFinds";
 import { ThreadList } from "@/components/ThreadList";
+import { NextBigMovers } from "@/components/NextBigMovers";
+import { NewsEngine } from "@/components/NewsEngine";
+import { GlobalHub } from "@/components/GlobalHub";
+import { AlertsPanel } from "@/components/AlertsPanel";
+import { MarketPulse } from "@/components/MarketPulse";
 import {
   getActiveId,
   getThread,
@@ -14,6 +19,8 @@ import {
   newThread,
   setActiveId,
 } from "@/lib/threads";
+
+type Tab = "ORACLE" | "PULSE" | "MOVERS" | "NEWS" | "GLOBAL" | "ALERTS";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -34,6 +41,7 @@ function Index() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("ORACLE");
   const oracleRef = useRef<OracleHandle>(null);
 
   // Bootstrap a thread on mount.
