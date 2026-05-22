@@ -302,11 +302,66 @@ export const Route = createFileRoute("/api/chat")({
               "Resolve a company/asset name to ticker symbols and surface related Yahoo news headlines.",
             inputSchema: z.object({ query: z.string().min(1).max(80) }),
             execute: async ({ query }) => {
+              try { return await searchSymbols(query); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_next_big_movers: tool({
+            description:
+              "Live small/mid/microcap anomaly scanner — abnormal volume, momentum acceleration, vol compression coils, breakouts. Returns top 20 with confidence + anomaly score + bull/bear probability + catalyst.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getNextBigCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_top_news: tool({
+            description:
+              "Top 20 emerging financial events with importance score, sector/country tags, bull/bear/mixed classification, and AI synthesis. Use for any macro, news, geopolitics, earnings, or catalyst question.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getNewsCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_market_pulse: tool({
+            description:
+              "Executive AI global market pulse — risk regime, liquidity regime, fear/greed composite, top bullish ideas, highest anomalies, dominant narrative.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getPulseCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_region_or_sector: tool({
+            description:
+              "Live quotes for a named region (us, china, japan, korea, india, europe, latam, africa) or sector (technology, semiconductors, ai, cybersecurity, finance, energy, nuclear_renewables, healthcare, biotech, consumer, industrial, crypto, commodities).",
+            inputSchema: z.object({
+              kind: z.enum(["region","sector"]),
+              key: z.string().min(1).max(40),
+            }),
+            execute: async ({ kind, key }) => {
               try {
-                return await searchSymbols(query);
-              } catch (e) {
-                return { error: String(e) };
-              }
+                const src = kind === "sector" ? SECTORS : REGIONS;
+                const entry = (src as any)[key.toLowerCase()];
+                if (!entry) return { error: `unknown ${kind}: ${key}` };
+                return { kind, key, label: entry.label, quotes: await getQuotes(entry.symbols) };
+              } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          run_oracle100: tool({
+            description:
+              "ORACLE 100-formula behavioral-finance state-space engine for a symbol. Returns 4 state vectors (Psychology H, Information I, Execution E, Reflexivity S) plus master scalars (psychology, information, execution, final_signal) and next-bar drift. Use for deep behavioral synthesis on a single ticker.",
+            inputSchema: z.object({
+              symbol: z.string().min(1).max(15),
+              newsVolume: z.number().optional(),
+              llmSentiment: z.number().min(-1).max(1).optional(),
+              shortInterest: z.number().min(0).max(1).optional(),
+              ratesLevelPct: z.number().optional(),
+            }),
+            execute: async (params) => {
+              try { return await computeOracle100(params); } catch (e) { return { error: String(e) }; }
             },
           }),
         };
