@@ -104,13 +104,16 @@ function Index() {
               </div>
             </div>
             <div className="hidden md:flex gap-1 ml-6">
-              {["MARKETS", "AGENTS", "FINDS", "BEHAVIOR", "RISK"].map((t) => (
-                <div
+              {(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS"] as Tab[]).map((t) => (
+                <button
                   key={t}
-                  className="px-3 py-1 font-mono text-[10px] tracking-widest text-muted-foreground hover:text-primary hover:bg-secondary transition-colors cursor-default"
+                  onClick={() => setTab(t)}
+                  className={`px-3 py-1 font-mono text-[10px] tracking-widest transition-colors ${
+                    tab === t ? "text-primary bg-secondary" : "text-muted-foreground hover:text-primary hover:bg-secondary"
+                  }`}
                 >
                   {t}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -187,7 +190,7 @@ function Index() {
         </aside>
 
         <section className="bg-background p-3 min-h-[70vh]">
-          {threadId && (
+          {tab === "ORACLE" && threadId && (
             <OracleConsole
               ref={oracleRef}
               key={threadId}
@@ -195,6 +198,11 @@ function Index() {
               initialMessages={initialMessages}
             />
           )}
+          {tab === "PULSE" && <MarketPulse onPick={pickSymbol} />}
+          {tab === "MOVERS" && <NextBigMovers onPick={pickSymbol} onAsk={askOracle} />}
+          {tab === "NEWS" && <NewsEngine onAsk={askOracle} />}
+          {tab === "GLOBAL" && <GlobalHub onPick={pickSymbol} onAsk={askOracle} />}
+          {tab === "ALERTS" && <AlertsPanel onPick={pickSymbol} />}
         </section>
       </main>
 
