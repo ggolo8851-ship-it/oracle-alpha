@@ -7,6 +7,11 @@ import { SymbolSearch } from "@/components/SymbolSearch";
 import { TickerDetail } from "@/components/TickerDetail";
 import { TopFinds } from "@/components/TopFinds";
 import { ThreadList } from "@/components/ThreadList";
+import { NextBigMovers } from "@/components/NextBigMovers";
+import { NewsEngine } from "@/components/NewsEngine";
+import { GlobalHub } from "@/components/GlobalHub";
+import { AlertsPanel } from "@/components/AlertsPanel";
+import { MarketPulse } from "@/components/MarketPulse";
 import {
   getActiveId,
   getThread,
@@ -14,6 +19,8 @@ import {
   newThread,
   setActiveId,
 } from "@/lib/threads";
+
+type Tab = "ORACLE" | "PULSE" | "MOVERS" | "NEWS" | "GLOBAL" | "ALERTS";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -34,6 +41,7 @@ function Index() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("ORACLE");
   const oracleRef = useRef<OracleHandle>(null);
 
   // Bootstrap a thread on mount.
@@ -74,8 +82,10 @@ function Index() {
 
   const askOracle = (prompt: string) => {
     setActiveSymbol(null);
-    setTimeout(() => oracleRef.current?.ask(prompt), 50);
+    setTab("ORACLE");
+    setTimeout(() => oracleRef.current?.ask(prompt), 80);
   };
+  const pickSymbol = (s: string) => setActiveSymbol(s);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -94,13 +104,16 @@ function Index() {
               </div>
             </div>
             <div className="hidden md:flex gap-1 ml-6">
-              {["MARKETS", "AGENTS", "FINDS", "BEHAVIOR", "RISK"].map((t) => (
-                <div
+              {(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS"] as Tab[]).map((t) => (
+                <button
                   key={t}
-                  className="px-3 py-1 font-mono text-[10px] tracking-widest text-muted-foreground hover:text-primary hover:bg-secondary transition-colors cursor-default"
+                  onClick={() => setTab(t)}
+                  className={`px-3 py-1 font-mono text-[10px] tracking-widest transition-colors ${
+                    tab === t ? "text-primary bg-secondary" : "text-muted-foreground hover:text-primary hover:bg-secondary"
+                  }`}
                 >
                   {t}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -177,7 +190,7 @@ function Index() {
         </aside>
 
         <section className="bg-background p-3 min-h-[70vh]">
-          {threadId && (
+          {tab === "ORACLE" && threadId && (
             <OracleConsole
               ref={oracleRef}
               key={threadId}
@@ -185,6 +198,11 @@ function Index() {
               initialMessages={initialMessages}
             />
           )}
+          {tab === "PULSE" && <MarketPulse onPick={pickSymbol} />}
+          {tab === "MOVERS" && <NextBigMovers onPick={pickSymbol} onAsk={askOracle} />}
+          {tab === "NEWS" && <NewsEngine onAsk={askOracle} />}
+          {tab === "GLOBAL" && <GlobalHub onPick={pickSymbol} onAsk={askOracle} />}
+          {tab === "ALERTS" && <AlertsPanel onPick={pickSymbol} />}
         </section>
       </main>
 

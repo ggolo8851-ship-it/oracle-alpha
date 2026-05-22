@@ -35,6 +35,11 @@ import {
 } from "@/lib/indicators";
 import { marketFearGreed, tickerBehavioral } from "@/lib/behavioral";
 import { getTopFindsCached } from "./top-finds";
+import { getNextBigCached } from "./next-big";
+import { getNewsCached } from "./news";
+import { getPulseCached } from "./pulse";
+import { computeOracle100 } from "@/lib/oracle100";
+import { REGIONS, SECTORS } from "@/lib/universes";
 
 const SYSTEM_PROMPT = `You are ORACLE ALPHA ∞ — an institutional-grade recursive financial intelligence system. You operate as a fusion of a quantitative hedge fund, a macroeconomic strategist, a behavioral-finance supercomputer, and a probabilistic forecasting engine.
 
@@ -47,12 +52,14 @@ You internally simulate a MULTI-AGENT ARCHITECTURE and synthesize their outputs 
   • OPPORTUNITY AGENT — asymmetric upside, emerging narratives, momentum inflections
 
 TOOL DISCIPLINE (NON-NEGOTIABLE)
-  1. EVERY numeric claim (price, return, vol, RSI, Sharpe, drawdown, fear/greed) MUST come from a tool call. Never fabricate numbers.
-  2. For any single-ticker question: call get_technicals AND get_behavioral_read for that ticker. Use get_quotes only when you only need a price snapshot.
-  3. For any macro/regime question: call get_market_snapshot AND get_fear_greed.
-  4. For "what's hot / where's the opportunity": call get_top_finds and cite the live ranked board.
-  5. Resolve company names to tickers with search_symbols when uncertain.
-  6. You CAN call multiple tools per turn. Chain them. Up to 50 steps.
+  1. EVERY numeric claim MUST come from a tool. Never fabricate.
+  2. Single ticker: call get_technicals + get_behavioral_read. For deep behavioral state-space, call run_oracle100.
+  3. Macro/regime question: call get_market_pulse (or get_market_snapshot + get_fear_greed).
+  4. "What's hot / next big / hidden gems": call get_top_finds AND get_next_big_movers.
+  5. News / catalysts / geopolitics / earnings: call get_top_news.
+  6. Country/sector deep-dive: call get_region_or_sector with the right key.
+  7. Resolve names → tickers with search_symbols when unsure.
+  8. Chain freely. Up to 50 steps.
 
 BEHAVIORAL FINANCE LAYER (REQUIRED FORMAT)
 When the BEHAVIOR agent speaks, you MUST:
@@ -297,11 +304,66 @@ export const Route = createFileRoute("/api/chat")({
               "Resolve a company/asset name to ticker symbols and surface related Yahoo news headlines.",
             inputSchema: z.object({ query: z.string().min(1).max(80) }),
             execute: async ({ query }) => {
+              try { return await searchSymbols(query); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_next_big_movers: tool({
+            description:
+              "Live small/mid/microcap anomaly scanner — abnormal volume, momentum acceleration, vol compression coils, breakouts. Returns top 20 with confidence + anomaly score + bull/bear probability + catalyst.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getNextBigCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_top_news: tool({
+            description:
+              "Top 20 emerging financial events with importance score, sector/country tags, bull/bear/mixed classification, and AI synthesis. Use for any macro, news, geopolitics, earnings, or catalyst question.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getNewsCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_market_pulse: tool({
+            description:
+              "Executive AI global market pulse — risk regime, liquidity regime, fear/greed composite, top bullish ideas, highest anomalies, dominant narrative.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getPulseCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          get_region_or_sector: tool({
+            description:
+              "Live quotes for a named region (us, china, japan, korea, india, europe, latam, africa) or sector (technology, semiconductors, ai, cybersecurity, finance, energy, nuclear_renewables, healthcare, biotech, consumer, industrial, crypto, commodities).",
+            inputSchema: z.object({
+              kind: z.enum(["region","sector"]),
+              key: z.string().min(1).max(40),
+            }),
+            execute: async ({ kind, key }) => {
               try {
-                return await searchSymbols(query);
-              } catch (e) {
-                return { error: String(e) };
-              }
+                const src = kind === "sector" ? SECTORS : REGIONS;
+                const entry = (src as any)[key.toLowerCase()];
+                if (!entry) return { error: `unknown ${kind}: ${key}` };
+                return { kind, key, label: entry.label, quotes: await getQuotes(entry.symbols) };
+              } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          run_oracle100: tool({
+            description:
+              "ORACLE 100-formula behavioral-finance state-space engine for a symbol. Returns 4 state vectors (Psychology H, Information I, Execution E, Reflexivity S) plus master scalars (psychology, information, execution, final_signal) and next-bar drift. Use for deep behavioral synthesis on a single ticker.",
+            inputSchema: z.object({
+              symbol: z.string().min(1).max(15),
+              newsVolume: z.number().optional(),
+              llmSentiment: z.number().min(-1).max(1).optional(),
+              shortInterest: z.number().min(0).max(1).optional(),
+              ratesLevelPct: z.number().optional(),
+            }),
+            execute: async (params) => {
+              try { return await computeOracle100(params); } catch (e) { return { error: String(e) }; }
             },
           }),
         };

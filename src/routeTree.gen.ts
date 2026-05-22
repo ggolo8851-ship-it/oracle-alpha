@@ -14,7 +14,12 @@ import { Route as ApiTopFindsRouteImport } from './routes/api/top-finds'
 import { Route as ApiTickerRouteImport } from './routes/api/ticker'
 import { Route as ApiSnapshotRouteImport } from './routes/api/snapshot'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
+import { Route as ApiRegionRouteImport } from './routes/api/region'
+import { Route as ApiPulseRouteImport } from './routes/api/pulse'
+import { Route as ApiNextBigRouteImport } from './routes/api/next-big'
+import { Route as ApiNewsRouteImport } from './routes/api/news'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiAlertsRouteImport } from './routes/api/alerts'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -41,15 +46,45 @@ const ApiSearchRoute = ApiSearchRouteImport.update({
   path: '/api/search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRegionRoute = ApiRegionRouteImport.update({
+  id: '/api/region',
+  path: '/api/region',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPulseRoute = ApiPulseRouteImport.update({
+  id: '/api/pulse',
+  path: '/api/pulse',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiNextBigRoute = ApiNextBigRouteImport.update({
+  id: '/api/next-big',
+  path: '/api/next-big',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiNewsRoute = ApiNewsRouteImport.update({
+  id: '/api/news',
+  path: '/api/news',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAlertsRoute = ApiAlertsRouteImport.update({
+  id: '/api/alerts',
+  path: '/api/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/alerts': typeof ApiAlertsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/news': typeof ApiNewsRoute
+  '/api/next-big': typeof ApiNextBigRoute
+  '/api/pulse': typeof ApiPulseRoute
+  '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
   '/api/snapshot': typeof ApiSnapshotRoute
   '/api/ticker': typeof ApiTickerRoute
@@ -57,7 +92,12 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/alerts': typeof ApiAlertsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/news': typeof ApiNewsRoute
+  '/api/next-big': typeof ApiNextBigRoute
+  '/api/pulse': typeof ApiPulseRoute
+  '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
   '/api/snapshot': typeof ApiSnapshotRoute
   '/api/ticker': typeof ApiTickerRoute
@@ -66,7 +106,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/alerts': typeof ApiAlertsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/news': typeof ApiNewsRoute
+  '/api/next-big': typeof ApiNextBigRoute
+  '/api/pulse': typeof ApiPulseRoute
+  '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
   '/api/snapshot': typeof ApiSnapshotRoute
   '/api/ticker': typeof ApiTickerRoute
@@ -76,7 +121,12 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/api/alerts'
     | '/api/chat'
+    | '/api/news'
+    | '/api/next-big'
+    | '/api/pulse'
+    | '/api/region'
     | '/api/search'
     | '/api/snapshot'
     | '/api/ticker'
@@ -84,7 +134,12 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/api/alerts'
     | '/api/chat'
+    | '/api/news'
+    | '/api/next-big'
+    | '/api/pulse'
+    | '/api/region'
     | '/api/search'
     | '/api/snapshot'
     | '/api/ticker'
@@ -92,7 +147,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/api/alerts'
     | '/api/chat'
+    | '/api/news'
+    | '/api/next-big'
+    | '/api/pulse'
+    | '/api/region'
     | '/api/search'
     | '/api/snapshot'
     | '/api/ticker'
@@ -101,7 +161,12 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiAlertsRoute: typeof ApiAlertsRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiNewsRoute: typeof ApiNewsRoute
+  ApiNextBigRoute: typeof ApiNextBigRoute
+  ApiPulseRoute: typeof ApiPulseRoute
+  ApiRegionRoute: typeof ApiRegionRoute
   ApiSearchRoute: typeof ApiSearchRoute
   ApiSnapshotRoute: typeof ApiSnapshotRoute
   ApiTickerRoute: typeof ApiTickerRoute
@@ -145,6 +210,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/region': {
+      id: '/api/region'
+      path: '/api/region'
+      fullPath: '/api/region'
+      preLoaderRoute: typeof ApiRegionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/pulse': {
+      id: '/api/pulse'
+      path: '/api/pulse'
+      fullPath: '/api/pulse'
+      preLoaderRoute: typeof ApiPulseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/next-big': {
+      id: '/api/next-big'
+      path: '/api/next-big'
+      fullPath: '/api/next-big'
+      preLoaderRoute: typeof ApiNextBigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/news': {
+      id: '/api/news'
+      path: '/api/news'
+      fullPath: '/api/news'
+      preLoaderRoute: typeof ApiNewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -152,12 +245,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/alerts': {
+      id: '/api/alerts'
+      path: '/api/alerts'
+      fullPath: '/api/alerts'
+      preLoaderRoute: typeof ApiAlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiAlertsRoute: ApiAlertsRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiNewsRoute: ApiNewsRoute,
+  ApiNextBigRoute: ApiNextBigRoute,
+  ApiPulseRoute: ApiPulseRoute,
+  ApiRegionRoute: ApiRegionRoute,
   ApiSearchRoute: ApiSearchRoute,
   ApiSnapshotRoute: ApiSnapshotRoute,
   ApiTickerRoute: ApiTickerRoute,
