@@ -82,8 +82,10 @@ function Index() {
 
   const askOracle = (prompt: string) => {
     setActiveSymbol(null);
-    setTimeout(() => oracleRef.current?.ask(prompt), 50);
+    setTab("ORACLE");
+    setTimeout(() => oracleRef.current?.ask(prompt), 80);
   };
+  const pickSymbol = (s: string) => setActiveSymbol(s);
 
   return (
     <div className="min-h-screen flex flex-col">
