@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTopFindsRouteImport } from './routes/api/top-finds'
 import { Route as ApiTickerRouteImport } from './routes/api/ticker'
 import { Route as ApiSnapshotRouteImport } from './routes/api/snapshot'
+import { Route as ApiSimulateRouteImport } from './routes/api/simulate'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiRegionRouteImport } from './routes/api/region'
 import { Route as ApiPulseRouteImport } from './routes/api/pulse'
@@ -39,6 +40,11 @@ const ApiTickerRoute = ApiTickerRouteImport.update({
 const ApiSnapshotRoute = ApiSnapshotRouteImport.update({
   id: '/api/snapshot',
   path: '/api/snapshot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSimulateRoute = ApiSimulateRouteImport.update({
+  id: '/api/simulate',
+  path: '/api/simulate',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSearchRoute = ApiSearchRouteImport.update({
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/api/pulse': typeof ApiPulseRoute
   '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/simulate': typeof ApiSimulateRoute
   '/api/snapshot': typeof ApiSnapshotRoute
   '/api/ticker': typeof ApiTickerRoute
   '/api/top-finds': typeof ApiTopFindsRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByTo {
   '/api/pulse': typeof ApiPulseRoute
   '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/simulate': typeof ApiSimulateRoute
   '/api/snapshot': typeof ApiSnapshotRoute
   '/api/ticker': typeof ApiTickerRoute
   '/api/top-finds': typeof ApiTopFindsRoute
@@ -113,6 +121,7 @@ export interface FileRoutesById {
   '/api/pulse': typeof ApiPulseRoute
   '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
+  '/api/simulate': typeof ApiSimulateRoute
   '/api/snapshot': typeof ApiSnapshotRoute
   '/api/ticker': typeof ApiTickerRoute
   '/api/top-finds': typeof ApiTopFindsRoute
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/api/pulse'
     | '/api/region'
     | '/api/search'
+    | '/api/simulate'
     | '/api/snapshot'
     | '/api/ticker'
     | '/api/top-finds'
@@ -141,6 +151,7 @@ export interface FileRouteTypes {
     | '/api/pulse'
     | '/api/region'
     | '/api/search'
+    | '/api/simulate'
     | '/api/snapshot'
     | '/api/ticker'
     | '/api/top-finds'
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '/api/pulse'
     | '/api/region'
     | '/api/search'
+    | '/api/simulate'
     | '/api/snapshot'
     | '/api/ticker'
     | '/api/top-finds'
@@ -168,6 +180,7 @@ export interface RootRouteChildren {
   ApiPulseRoute: typeof ApiPulseRoute
   ApiRegionRoute: typeof ApiRegionRoute
   ApiSearchRoute: typeof ApiSearchRoute
+  ApiSimulateRoute: typeof ApiSimulateRoute
   ApiSnapshotRoute: typeof ApiSnapshotRoute
   ApiTickerRoute: typeof ApiTickerRoute
   ApiTopFindsRoute: typeof ApiTopFindsRoute
@@ -201,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/api/snapshot'
       fullPath: '/api/snapshot'
       preLoaderRoute: typeof ApiSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/simulate': {
+      id: '/api/simulate'
+      path: '/api/simulate'
+      fullPath: '/api/simulate'
+      preLoaderRoute: typeof ApiSimulateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/search': {
@@ -264,6 +284,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPulseRoute: ApiPulseRoute,
   ApiRegionRoute: ApiRegionRoute,
   ApiSearchRoute: ApiSearchRoute,
+  ApiSimulateRoute: ApiSimulateRoute,
   ApiSnapshotRoute: ApiSnapshotRoute,
   ApiTickerRoute: ApiTickerRoute,
   ApiTopFindsRoute: ApiTopFindsRoute,
