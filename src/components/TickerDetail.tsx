@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { addWatch, isWatched, removeWatch } from "@/lib/watchlist";
+import { StockSimulation } from "./StockSimulation";
 
 type Detail = {
   symbol: string;
@@ -19,6 +22,13 @@ export function TickerDetail({
 }) {
   const [d, setD] = useState<Detail | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [watched, setWatched] = useState(false);
+  const [showSim, setShowSim] = useState(false);
+  useEffect(() => { setWatched(isWatched(symbol)); setShowSim(false); }, [symbol]);
+  const toggleWatch = () => {
+    if (watched) { removeWatch(symbol); setWatched(false); toast(`${symbol} removed from bag`); }
+    else { addWatch(symbol, d?.quote?.regularMarketPrice); setWatched(true); toast.success(`${symbol} added to bag · live alerts ON`); }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +147,23 @@ export function TickerDetail({
             </div>
 
             <div className="space-y-2 pt-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={toggleWatch}
+                  className={`px-3 py-2 tracking-widest border ${watched ? "border-bear text-bear hover:bg-bear/10" : "border-bull text-bull hover:bg-bull/10"}`}
+                >
+                  {watched ? "✕ REMOVE FROM BAG" : "＋ ADD TO BAG"}
+                </button>
+                <button
+                  onClick={() => setShowSim(s => !s)}
+                  className="px-3 py-2 border border-primary text-primary tracking-widest hover:bg-primary/10"
+                >
+                  {showSim ? "− HIDE SIM" : "Φ SIMULATE"}
+                </button>
+              </div>
+
+              {showSim && <StockSimulation symbol={symbol} onAsk={onAskOracle} />}
+
               <button
                 onClick={() =>
                   onAskOracle(
@@ -150,7 +177,7 @@ export function TickerDetail({
               <button
                 onClick={() =>
                   onAskOracle(
-                    `Behavioral finance deep-dive on ${symbol}: anchoring, reflexivity, crowding, recency bias, and dominant narratives. Use get_behavioral_read.`,
+                    `Behavioral finance deep-dive on ${symbol}: anchoring, reflexivity, crowding, recency bias, and dominant narratives. Use get_behavioral_read and run_oracle100.`,
                   )
                 }
                 className="w-full px-3 py-2 border border-accent text-accent tracking-widest hover:bg-accent/10"
