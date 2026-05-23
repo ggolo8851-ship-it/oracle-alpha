@@ -211,6 +211,22 @@ function Index() {
           {tab === "NEWS" && <NewsEngine onAsk={askOracle} />}
           {tab === "GLOBAL" && <GlobalHub onPick={pickSymbol} onAsk={askOracle} />}
           {tab === "ALERTS" && <AlertsPanel onPick={pickSymbol} />}
+          {tab === "WATCH" && (
+            <div className="space-y-3">
+              <div className="font-mono">
+                <div className="text-[10px] tracking-[0.3em] text-muted-foreground">▸ BAG · SIMULATION</div>
+                <div className="text-lg tracking-widest text-primary">SCENARIO ENGINE</div>
+                <div className="text-[10px] text-muted-foreground">Monte Carlo paths drift-anchored to ORACLE 100-formula behavioral signal. Add tickers from search or any panel — live alerts fire across all tabs.</div>
+              </div>
+              {activeSymbol ? (
+                <StockSimulation symbol={activeSymbol} onAsk={askOracle} />
+              ) : (
+                <div className="bg-card border border-border p-4 font-mono text-xs text-muted-foreground">
+                  No symbol selected. Click any ticker (search, bag, movers, top finds) to simulate forward price paths.
+                </div>
+              )}
+            </div>
+          )}
         </section>
       </main>
 
@@ -218,6 +234,8 @@ function Index() {
         <span>ANOMALY ∞ · RECURSIVE FINANCIAL INTELLIGENCE</span>
         <span>NASDAQ / YAHOO FEED · DELAYED ≤15M · EDUCATIONAL USE ONLY</span>
       </footer>
+
+      <WatchAlerts onPick={(s) => setActiveSymbol(s)} />
 
       {activeSymbol && (
         <TickerDetail
