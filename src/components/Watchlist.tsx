@@ -48,8 +48,10 @@ export function Watchlist({
         <span>▸ BAG · WATCHLIST ({items.length})</span>
       </div>
       {items.length === 0 ? (
-        <div className="bg-card border border-border p-3 font-mono text-[10px] text-muted-foreground">
-          Empty bag. Search a ticker → "ADD TO BAG" to pin it. Live alerts fire on big moves, 52w extremes, RSI flips, volume spikes.
+        <div className="bg-card border border-border p-3 font-mono text-[10px] text-muted-foreground space-y-1.5">
+          <div className="text-foreground">Empty bag.</div>
+          <div>Search a ticker → "ADD TO BAG", or just tell Oracle <span className="text-accent">"add NVDA to my bag"</span> — it can pin tickers for you.</div>
+          <div className="text-muted-foreground">Live alerts auto-fire on: intraday %, 52w extremes, volume spikes.</div>
         </div>
       ) : (
         <div className="space-y-1.5">

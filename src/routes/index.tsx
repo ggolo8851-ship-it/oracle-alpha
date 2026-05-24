@@ -15,6 +15,8 @@ import { MarketPulse } from "@/components/MarketPulse";
 import { Watchlist } from "@/components/Watchlist";
 import { WatchAlerts } from "@/components/WatchAlerts";
 import { StockSimulation } from "@/components/StockSimulation";
+import { PrivateEquity } from "@/components/PrivateEquity";
+import { addWatch, removeWatch } from "@/lib/watchlist";
 import {
   getActiveId,
   getThread,
@@ -23,7 +25,7 @@ import {
   setActiveId,
 } from "@/lib/threads";
 
-type Tab = "ORACLE" | "PULSE" | "MOVERS" | "NEWS" | "GLOBAL" | "ALERTS" | "WATCH";
+type Tab = "ORACLE" | "PULSE" | "MOVERS" | "NEWS" | "GLOBAL" | "ALERTS" | "WATCH" | "PRIVATE";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -90,6 +92,32 @@ function Index() {
   };
   const pickSymbol = (s: string) => setActiveSymbol(s);
 
+  // Let the AI control the terminal via ui_* tools.
+  useEffect(() => {
+    const onUI = (e: Event) => {
+      const d = (e as CustomEvent).detail as { ui_action: string; symbol?: string; tab?: Tab; thresholdPct?: number };
+      switch (d.ui_action) {
+        case "add_to_bag":
+          if (d.symbol) addWatch(d.symbol, undefined);
+          break;
+        case "remove_from_bag":
+          if (d.symbol) removeWatch(d.symbol);
+          break;
+        case "open_ticker":
+          if (d.symbol) setActiveSymbol(d.symbol);
+          break;
+        case "simulate":
+          if (d.symbol) { setActiveSymbol(d.symbol); setTab("WATCH"); }
+          break;
+        case "switch_tab":
+          if (d.tab) setTab(d.tab);
+          break;
+      }
+    };
+    window.addEventListener("anomaly:ui-action", onUI);
+    return () => window.removeEventListener("anomaly:ui-action", onUI);
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border bg-card/80 backdrop-blur">
@@ -107,7 +135,7 @@ function Index() {
               </div>
             </div>
             <div className="hidden md:flex gap-1 ml-6">
-              {(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS","WATCH"] as Tab[]).map((t) => (
+              {(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS","WATCH","PRIVATE"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -216,7 +244,7 @@ function Index() {
               <div className="font-mono">
                 <div className="text-[10px] tracking-[0.3em] text-muted-foreground">▸ BAG · SIMULATION</div>
                 <div className="text-lg tracking-widest text-primary">SCENARIO ENGINE</div>
-                <div className="text-[10px] text-muted-foreground">Monte Carlo paths drift-anchored to ORACLE 100-formula behavioral signal. Add tickers from search or any panel — live alerts fire across all tabs.</div>
+                <div className="text-[10px] text-muted-foreground">Monte Carlo paths drift-anchored to ORACLE 100-formula behavioral signal. Add tickers from search or any panel — live alerts fire across all tabs. Ask Oracle "add NVDA to my bag" or "simulate AAPL" and it will do it for you.</div>
               </div>
               {activeSymbol ? (
                 <StockSimulation symbol={activeSymbol} onAsk={askOracle} />
@@ -227,6 +255,7 @@ function Index() {
               )}
             </div>
           )}
+          {tab === "PRIVATE" && <PrivateEquity onPick={pickSymbol} onAsk={askOracle} />}
         </section>
       </main>
 

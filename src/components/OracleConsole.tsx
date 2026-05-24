@@ -45,6 +45,24 @@ export const OracleConsole = forwardRef<OracleHandle, {
     saveMessages(threadId, messages as UIMessage[]);
   }, [messages, threadId]);
 
+  // Dispatch UI-action events when the model calls any ui_* tool.
+  const firedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const m of messages) {
+      for (const p of m.parts as any[]) {
+        if (!p?.type?.startsWith?.("tool-ui_")) continue;
+        if (p.state !== "output-available") continue;
+        const key = `${m.id}:${p.toolCallId ?? p.type}`;
+        if (firedRef.current.has(key)) continue;
+        firedRef.current.add(key);
+        const out = p.output;
+        if (out?.ui_action) {
+          window.dispatchEvent(new CustomEvent("anomaly:ui-action", { detail: out }));
+        }
+      }
+    }
+  }, [messages]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, status]);
@@ -190,11 +208,32 @@ export const OracleConsole = forwardRef<OracleHandle, {
             RECURSIVE SYNTHESIS RUNNING…
           </div>
         )}
-        {error && (
-          <div className="font-mono text-xs text-destructive border border-destructive/50 p-2">
-            ERR: {error.message}
-          </div>
-        )}
+        {error && (() => {
+          const msg = error.message ?? String(error);
+          const isPayment = msg.includes("402") || /payment\s*required/i.test(msg);
+          const isRate = msg.includes("429");
+          if (isPayment) {
+            return (
+              <div className="font-mono text-xs border border-warn/60 bg-warn/10 p-3 space-y-1">
+                <div className="text-warn tracking-widest">▲ AI CREDITS EXHAUSTED</div>
+                <div className="text-foreground">The Lovable AI Gateway is out of credits for this workspace. Prompts will resume once credits are topped up.</div>
+                <div className="text-muted-foreground text-[10px]">Settings → Workspace → Usage → add credits. (Default model is already the cheapest tier — google/gemini-3-flash-preview.)</div>
+              </div>
+            );
+          }
+          if (isRate) {
+            return (
+              <div className="font-mono text-xs border border-warn/60 bg-warn/10 p-2 text-warn">
+                ▲ Rate limited — wait ~30s and re-run.
+              </div>
+            );
+          }
+          return (
+            <div className="font-mono text-xs text-destructive border border-destructive/50 p-2">
+              ERR: {msg}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="border-t border-border bg-secondary/40 p-2">

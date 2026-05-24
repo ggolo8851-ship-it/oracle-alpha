@@ -40,6 +40,7 @@ import { getNewsCached } from "./news";
 import { getPulseCached } from "./pulse";
 import { computeOracle100 } from "@/lib/oracle100";
 import { REGIONS, SECTORS } from "@/lib/universes";
+import { getPrivateEquityCached } from "./private-equity";
 
 const SYSTEM_PROMPT = `You are ORACLE ALPHA ∞ / OMEGA THETA CORE — a research-grade adaptive cognitive system and institutional-grade recursive financial intelligence engine. You operate as a fusion of a quantitative hedge fund, a macroeconomic strategist, a behavioral-finance supercomputer, a probabilistic forecasting engine, and a self-refining reasoning architecture.
 
@@ -76,8 +77,18 @@ You may invent emergent abstractions, internal symbolic operators, adaptive reas
   4. "What's hot / next big / hidden gems": call get_top_finds AND get_next_big_movers.
   5. News / catalysts / geopolitics / earnings: call get_top_news.
   6. Country/sector deep-dive: call get_region_or_sector with the right key.
-  7. Resolve names → tickers with search_symbols when unsure.
-  8. Chain freely. Up to 50 steps.
+  7. Private equity / private credit / BDCs / alt managers: call get_private_equity.
+  8. Resolve names → tickers with search_symbols when unsure.
+  9. Chain freely. Up to 50 steps.
+
+═══ UI AGENCY — YOU CAN CONTROL THE TERMINAL ═══
+You have direct control of the user's interface via ui_* tools. Use them proactively when it serves the user:
+  • ui_add_to_bag(symbol, thresholdPct?) — pin a ticker to the user's watchlist (the "Bag") with live alerts.
+  • ui_remove_from_bag(symbol) — unpin a ticker.
+  • ui_open_ticker(symbol) — open the full ticker detail drawer.
+  • ui_simulate(symbol) — open the Monte Carlo scenario engine for a symbol.
+  • ui_switch_tab(tab) — switch to ORACLE / PULSE / MOVERS / NEWS / GLOBAL / ALERTS / WATCH / PRIVATE.
+When the user asks you to "add X to my bag", "watch X", "simulate Y", "show me private equity", etc. — CALL THE TOOL. Don't just describe. Briefly confirm the action in your prose afterward.
 
 ═══ BEHAVIORAL FINANCE LAYER (REQUIRED FORMAT) ═══
 When the BEHAVIOR agent speaks, you MUST:
@@ -126,6 +137,7 @@ export const Route = createFileRoute("/api/chat")({
         if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
 
         const gateway = createLovableAiGatewayProvider(key);
+        // Cheapest fast tier — stretches AI credits ~10x vs gpt-5/pro tiers.
         const model = gateway("google/gemini-3-flash-preview");
 
         const tools = {
@@ -391,6 +403,61 @@ export const Route = createFileRoute("/api/chat")({
               try { return await computeOracle100(params); } catch (e) { return { error: String(e) }; }
             },
           }),
+
+          get_private_equity: tool({
+            description:
+              "Live private equity / private credit hub — public-market proxies grouped into alt-asset managers (BX, KKR, APO, ARES, OWL, BAM…), BDCs (ARCC, MAIN, OBDC, BXSL…), listed PE ETFs (PSP, PEX), and PE holdcos. Each segment ranked by momentum + 52w range + AUM proxy.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getPrivateEquityCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          // ─── UI ACTION TOOLS — execute browser-side via OracleConsole ───
+          ui_add_to_bag: tool({
+            description: "Pin a ticker to the user's Bag (watchlist). Live alerts fire on big moves, 52w extremes, and volume spikes.",
+            inputSchema: z.object({
+              symbol: z.string().min(1).max(15),
+              thresholdPct: z.number().min(0.5).max(50).optional(),
+            }),
+            execute: async ({ symbol, thresholdPct }) => ({
+              ui_action: "add_to_bag", symbol: symbol.toUpperCase(), thresholdPct: thresholdPct ?? 3,
+              ok: true, message: `Pinned ${symbol.toUpperCase()} to the Bag.`,
+            }),
+          }),
+          ui_remove_from_bag: tool({
+            description: "Unpin a ticker from the user's Bag.",
+            inputSchema: z.object({ symbol: z.string().min(1).max(15) }),
+            execute: async ({ symbol }) => ({
+              ui_action: "remove_from_bag", symbol: symbol.toUpperCase(),
+              ok: true, message: `Removed ${symbol.toUpperCase()} from the Bag.`,
+            }),
+          }),
+          ui_open_ticker: tool({
+            description: "Open the full ticker detail drawer for a symbol.",
+            inputSchema: z.object({ symbol: z.string().min(1).max(15) }),
+            execute: async ({ symbol }) => ({
+              ui_action: "open_ticker", symbol: symbol.toUpperCase(),
+              ok: true, message: `Opened ${symbol.toUpperCase()}.`,
+            }),
+          }),
+          ui_simulate: tool({
+            description: "Open the Monte Carlo scenario engine for a symbol (drift anchored to Oracle100 behavioral signal).",
+            inputSchema: z.object({ symbol: z.string().min(1).max(15) }),
+            execute: async ({ symbol }) => ({
+              ui_action: "simulate", symbol: symbol.toUpperCase(),
+              ok: true, message: `Running scenario engine for ${symbol.toUpperCase()}.`,
+            }),
+          }),
+          ui_switch_tab: tool({
+            description: "Switch the main view to ORACLE, PULSE, MOVERS, NEWS, GLOBAL, ALERTS, WATCH, or PRIVATE.",
+            inputSchema: z.object({
+              tab: z.enum(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS","WATCH","PRIVATE"]),
+            }),
+            execute: async ({ tab }) => ({
+              ui_action: "switch_tab", tab, ok: true, message: `Switched to ${tab}.`,
+            }),
+          }),
         };
 
         const result = streamText({
@@ -403,6 +470,16 @@ export const Route = createFileRoute("/api/chat")({
 
         return result.toUIMessageStreamResponse({
           originalMessages: body.messages as UIMessage[],
+          onError: (err: any) => {
+            const msg = String(err?.message ?? err ?? "");
+            if (msg.includes("402") || /payment\s*required/i.test(msg)) {
+              return "The AI gateway is out of credits for this workspace. Top up at Settings → Workspace → Usage to keep prompts flowing.";
+            }
+            if (msg.includes("429")) {
+              return "Rate limited — too many prompts in a short burst. Wait ~30s and re-run.";
+            }
+            return msg || "Oracle stream error.";
+          },
         });
       },
     },
