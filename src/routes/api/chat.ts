@@ -403,6 +403,61 @@ export const Route = createFileRoute("/api/chat")({
               try { return await computeOracle100(params); } catch (e) { return { error: String(e) }; }
             },
           }),
+
+          get_private_equity: tool({
+            description:
+              "Live private equity / private credit hub — public-market proxies grouped into alt-asset managers (BX, KKR, APO, ARES, OWL, BAM…), BDCs (ARCC, MAIN, OBDC, BXSL…), listed PE ETFs (PSP, PEX), and PE holdcos. Each segment ranked by momentum + 52w range + AUM proxy.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              try { return await getPrivateEquityCached(); } catch (e) { return { error: String(e) }; }
+            },
+          }),
+
+          // ─── UI ACTION TOOLS — execute browser-side via OracleConsole ───
+          ui_add_to_bag: tool({
+            description: "Pin a ticker to the user's Bag (watchlist). Live alerts fire on big moves, 52w extremes, and volume spikes.",
+            inputSchema: z.object({
+              symbol: z.string().min(1).max(15),
+              thresholdPct: z.number().min(0.5).max(50).optional(),
+            }),
+            execute: async ({ symbol, thresholdPct }) => ({
+              ui_action: "add_to_bag", symbol: symbol.toUpperCase(), thresholdPct: thresholdPct ?? 3,
+              ok: true, message: `Pinned ${symbol.toUpperCase()} to the Bag.`,
+            }),
+          }),
+          ui_remove_from_bag: tool({
+            description: "Unpin a ticker from the user's Bag.",
+            inputSchema: z.object({ symbol: z.string().min(1).max(15) }),
+            execute: async ({ symbol }) => ({
+              ui_action: "remove_from_bag", symbol: symbol.toUpperCase(),
+              ok: true, message: `Removed ${symbol.toUpperCase()} from the Bag.`,
+            }),
+          }),
+          ui_open_ticker: tool({
+            description: "Open the full ticker detail drawer for a symbol.",
+            inputSchema: z.object({ symbol: z.string().min(1).max(15) }),
+            execute: async ({ symbol }) => ({
+              ui_action: "open_ticker", symbol: symbol.toUpperCase(),
+              ok: true, message: `Opened ${symbol.toUpperCase()}.`,
+            }),
+          }),
+          ui_simulate: tool({
+            description: "Open the Monte Carlo scenario engine for a symbol (drift anchored to Oracle100 behavioral signal).",
+            inputSchema: z.object({ symbol: z.string().min(1).max(15) }),
+            execute: async ({ symbol }) => ({
+              ui_action: "simulate", symbol: symbol.toUpperCase(),
+              ok: true, message: `Running scenario engine for ${symbol.toUpperCase()}.`,
+            }),
+          }),
+          ui_switch_tab: tool({
+            description: "Switch the main view to ORACLE, PULSE, MOVERS, NEWS, GLOBAL, ALERTS, WATCH, or PRIVATE.",
+            inputSchema: z.object({
+              tab: z.enum(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS","WATCH","PRIVATE"]),
+            }),
+            execute: async ({ tab }) => ({
+              ui_action: "switch_tab", tab, ok: true, message: `Switched to ${tab}.`,
+            }),
+          }),
         };
 
         const result = streamText({
@@ -415,6 +470,16 @@ export const Route = createFileRoute("/api/chat")({
 
         return result.toUIMessageStreamResponse({
           originalMessages: body.messages as UIMessage[],
+          onError: (err: any) => {
+            const msg = String(err?.message ?? err ?? "");
+            if (msg.includes("402") || /payment\s*required/i.test(msg)) {
+              return "The AI gateway is out of credits for this workspace. Top up at Settings → Workspace → Usage to keep prompts flowing.";
+            }
+            if (msg.includes("429")) {
+              return "Rate limited — too many prompts in a short burst. Wait ~30s and re-run.";
+            }
+            return msg || "Oracle stream error.";
+          },
         });
       },
     },
