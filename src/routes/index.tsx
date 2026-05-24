@@ -15,6 +15,8 @@ import { MarketPulse } from "@/components/MarketPulse";
 import { Watchlist } from "@/components/Watchlist";
 import { WatchAlerts } from "@/components/WatchAlerts";
 import { StockSimulation } from "@/components/StockSimulation";
+import { PrivateEquity } from "@/components/PrivateEquity";
+import { addWatch, removeWatch } from "@/lib/watchlist";
 import {
   getActiveId,
   getThread,
@@ -23,7 +25,7 @@ import {
   setActiveId,
 } from "@/lib/threads";
 
-type Tab = "ORACLE" | "PULSE" | "MOVERS" | "NEWS" | "GLOBAL" | "ALERTS" | "WATCH";
+type Tab = "ORACLE" | "PULSE" | "MOVERS" | "NEWS" | "GLOBAL" | "ALERTS" | "WATCH" | "PRIVATE";
 
 export const Route = createFileRoute("/")({
   component: Index,
