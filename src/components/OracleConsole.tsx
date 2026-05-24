@@ -45,6 +45,24 @@ export const OracleConsole = forwardRef<OracleHandle, {
     saveMessages(threadId, messages as UIMessage[]);
   }, [messages, threadId]);
 
+  // Dispatch UI-action events when the model calls any ui_* tool.
+  const firedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const m of messages) {
+      for (const p of m.parts as any[]) {
+        if (!p?.type?.startsWith?.("tool-ui_")) continue;
+        if (p.state !== "output-available") continue;
+        const key = `${m.id}:${p.toolCallId ?? p.type}`;
+        if (firedRef.current.has(key)) continue;
+        firedRef.current.add(key);
+        const out = p.output;
+        if (out?.ui_action) {
+          window.dispatchEvent(new CustomEvent("anomaly:ui-action", { detail: out }));
+        }
+      }
+    }
+  }, [messages]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, status]);
