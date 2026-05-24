@@ -92,6 +92,32 @@ function Index() {
   };
   const pickSymbol = (s: string) => setActiveSymbol(s);
 
+  // Let the AI control the terminal via ui_* tools.
+  useEffect(() => {
+    const onUI = (e: Event) => {
+      const d = (e as CustomEvent).detail as { ui_action: string; symbol?: string; tab?: Tab; thresholdPct?: number };
+      switch (d.ui_action) {
+        case "add_to_bag":
+          if (d.symbol) addWatch(d.symbol, undefined);
+          break;
+        case "remove_from_bag":
+          if (d.symbol) removeWatch(d.symbol);
+          break;
+        case "open_ticker":
+          if (d.symbol) setActiveSymbol(d.symbol);
+          break;
+        case "simulate":
+          if (d.symbol) { setActiveSymbol(d.symbol); setTab("WATCH"); }
+          break;
+        case "switch_tab":
+          if (d.tab) setTab(d.tab);
+          break;
+      }
+    };
+    window.addEventListener("anomaly:ui-action", onUI);
+    return () => window.removeEventListener("anomaly:ui-action", onUI);
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border bg-card/80 backdrop-blur">
