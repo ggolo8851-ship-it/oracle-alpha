@@ -135,7 +135,7 @@ function Index() {
               </div>
             </div>
             <div className="hidden md:flex gap-1 ml-6">
-              {(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS","WATCH"] as Tab[]).map((t) => (
+              {(["ORACLE","PULSE","MOVERS","NEWS","GLOBAL","ALERTS","WATCH","PRIVATE"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
