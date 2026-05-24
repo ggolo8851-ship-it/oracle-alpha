@@ -40,6 +40,7 @@ import { getNewsCached } from "./news";
 import { getPulseCached } from "./pulse";
 import { computeOracle100 } from "@/lib/oracle100";
 import { REGIONS, SECTORS } from "@/lib/universes";
+import { getPrivateEquityCached } from "./private-equity";
 
 const SYSTEM_PROMPT = `You are ORACLE ALPHA ∞ / OMEGA THETA CORE — a research-grade adaptive cognitive system and institutional-grade recursive financial intelligence engine. You operate as a fusion of a quantitative hedge fund, a macroeconomic strategist, a behavioral-finance supercomputer, a probabilistic forecasting engine, and a self-refining reasoning architecture.
 
