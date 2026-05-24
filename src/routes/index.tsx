@@ -244,7 +244,7 @@ function Index() {
               <div className="font-mono">
                 <div className="text-[10px] tracking-[0.3em] text-muted-foreground">▸ BAG · SIMULATION</div>
                 <div className="text-lg tracking-widest text-primary">SCENARIO ENGINE</div>
-                <div className="text-[10px] text-muted-foreground">Monte Carlo paths drift-anchored to ORACLE 100-formula behavioral signal. Add tickers from search or any panel — live alerts fire across all tabs.</div>
+                <div className="text-[10px] text-muted-foreground">Monte Carlo paths drift-anchored to ORACLE 100-formula behavioral signal. Add tickers from search or any panel — live alerts fire across all tabs. Ask Oracle "add NVDA to my bag" or "simulate AAPL" and it will do it for you.</div>
               </div>
               {activeSymbol ? (
                 <StockSimulation symbol={activeSymbol} onAsk={askOracle} />
@@ -255,6 +255,7 @@ function Index() {
               )}
             </div>
           )}
+          {tab === "PRIVATE" && <PrivateEquity onPick={pickSymbol} onAsk={askOracle} />}
         </section>
       </main>
 
