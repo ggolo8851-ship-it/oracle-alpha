@@ -17,6 +17,7 @@ import { Route as ApiSimulateRouteImport } from './routes/api/simulate'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as ApiRegionRouteImport } from './routes/api/region'
 import { Route as ApiPulseRouteImport } from './routes/api/pulse'
+import { Route as ApiPrivateEquityRouteImport } from './routes/api/private-equity'
 import { Route as ApiNextBigRouteImport } from './routes/api/next-big'
 import { Route as ApiNewsRouteImport } from './routes/api/news'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
@@ -62,6 +63,11 @@ const ApiPulseRoute = ApiPulseRouteImport.update({
   path: '/api/pulse',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPrivateEquityRoute = ApiPrivateEquityRouteImport.update({
+  id: '/api/private-equity',
+  path: '/api/private-equity',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiNextBigRoute = ApiNextBigRouteImport.update({
   id: '/api/next-big',
   path: '/api/next-big',
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/api/news': typeof ApiNewsRoute
   '/api/next-big': typeof ApiNextBigRoute
+  '/api/private-equity': typeof ApiPrivateEquityRoute
   '/api/pulse': typeof ApiPulseRoute
   '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/api/news': typeof ApiNewsRoute
   '/api/next-big': typeof ApiNextBigRoute
+  '/api/private-equity': typeof ApiPrivateEquityRoute
   '/api/pulse': typeof ApiPulseRoute
   '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/api/news': typeof ApiNewsRoute
   '/api/next-big': typeof ApiNextBigRoute
+  '/api/private-equity': typeof ApiPrivateEquityRoute
   '/api/pulse': typeof ApiPulseRoute
   '/api/region': typeof ApiRegionRoute
   '/api/search': typeof ApiSearchRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/news'
     | '/api/next-big'
+    | '/api/private-equity'
     | '/api/pulse'
     | '/api/region'
     | '/api/search'
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/news'
     | '/api/next-big'
+    | '/api/private-equity'
     | '/api/pulse'
     | '/api/region'
     | '/api/search'
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/news'
     | '/api/next-big'
+    | '/api/private-equity'
     | '/api/pulse'
     | '/api/region'
     | '/api/search'
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   ApiChatRoute: typeof ApiChatRoute
   ApiNewsRoute: typeof ApiNewsRoute
   ApiNextBigRoute: typeof ApiNextBigRoute
+  ApiPrivateEquityRoute: typeof ApiPrivateEquityRoute
   ApiPulseRoute: typeof ApiPulseRoute
   ApiRegionRoute: typeof ApiRegionRoute
   ApiSearchRoute: typeof ApiSearchRoute
@@ -244,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPulseRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/private-equity': {
+      id: '/api/private-equity'
+      path: '/api/private-equity'
+      fullPath: '/api/private-equity'
+      preLoaderRoute: typeof ApiPrivateEquityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/next-big': {
       id: '/api/next-big'
       path: '/api/next-big'
@@ -281,6 +301,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChatRoute: ApiChatRoute,
   ApiNewsRoute: ApiNewsRoute,
   ApiNextBigRoute: ApiNextBigRoute,
+  ApiPrivateEquityRoute: ApiPrivateEquityRoute,
   ApiPulseRoute: ApiPulseRoute,
   ApiRegionRoute: ApiRegionRoute,
   ApiSearchRoute: ApiSearchRoute,
