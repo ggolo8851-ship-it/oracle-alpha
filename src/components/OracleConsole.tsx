@@ -1,8 +1,10 @@
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { saveMessages } from "@/lib/threads";
+
+// UIMessage shape kept compatible with the existing thread store.
+type UIPart = { type: "text"; text: string };
+type UIMessage = { id: string; role: "user" | "assistant" | "system"; parts: UIPart[] };
 
 const AGENTS = [
   { k: "QUANT", c: "oklch(0.78 0.18 70)" },
@@ -14,116 +16,107 @@ const AGENTS = [
 ];
 
 const PROMPTS = [
-  "Full macro brief: rates, liquidity, dollar, fear/greed regime.",
-  "Multi-agent synthesis on NVDA — technicals + behavioral.",
-  "Show top 10 finds right now and explain the leader.",
-  "Behavioral read on TSLA — biases, reflexivity, crowding.",
-  "Volatility map: what is VIX pricing vs. realized?",
+  "Market pulse — regime, fear/greed, dominant narrative.",
+  "$NVDA deep — quant + behavioral + Oracle100 synthesis.",
+  "Top finds right now and explain the leader.",
+  "Next big movers — microcap anomaly scanner.",
+  "Private equity hub — alt managers + BDCs.",
 ];
 
 export type OracleHandle = { ask: (prompt: string) => void };
+
+const uid = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `m_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 
 export const OracleConsole = forwardRef<OracleHandle, {
   threadId: string;
   initialMessages: UIMessage[];
 }>(function OracleConsole({ threadId, initialMessages }, ref) {
-  const [transport] = useState(
-    () => new DefaultChatTransport({ api: "/api/chat" }),
-  );
-  const { messages, sendMessage, status, error, stop } = useChat({
-    id: threadId,
-    messages: initialMessages,
-    transport,
-  });
+  const [messages, setMessages] = useState<UIMessage[]>(initialMessages);
   const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Persist to localStorage on every message change.
-  useEffect(() => {
-    if (!threadId) return;
-    saveMessages(threadId, messages as UIMessage[]);
-  }, [messages, threadId]);
+  // hot-swap when the active thread changes
+  useEffect(() => { setMessages(initialMessages); setError(null); }, [threadId]);
 
-  // Dispatch UI-action events when the model calls any ui_* tool.
-  const firedRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    for (const m of messages) {
-      for (const p of m.parts as any[]) {
-        if (!p?.type?.startsWith?.("tool-ui_")) continue;
-        if (p.state !== "output-available") continue;
-        const key = `${m.id}:${p.toolCallId ?? p.type}`;
-        if (firedRef.current.has(key)) continue;
-        firedRef.current.add(key);
-        const out = p.output;
-        if (out?.ui_action) {
-          window.dispatchEvent(new CustomEvent("anomaly:ui-action", { detail: out }));
-        }
-      }
-    }
-  }, [messages]);
+  // persist
+  useEffect(() => { if (threadId) saveMessages(threadId, messages); }, [messages, threadId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, status]);
+  }, [messages, busy]);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [status, threadId]);
+  useEffect(() => { inputRef.current?.focus(); }, [threadId, busy]);
 
-  const busy = status === "submitted" || status === "streaming";
-
-  const submit = (text: string) => {
+  const submit = async (text: string) => {
     const t = text.trim();
     if (!t || busy) return;
-    sendMessage({ text: t });
+    setError(null);
+    const userMsg: UIMessage = { id: uid(), role: "user", parts: [{ type: "text", text: t }] };
+    const next = [...messages, userMsg];
+    setMessages(next);
     setInput("");
+    setBusy(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { text?: string; ui_action?: any };
+      if (data.ui_action?.ui_action) {
+        window.dispatchEvent(new CustomEvent("anomaly:ui-action", { detail: data.ui_action }));
+      }
+      const aMsg: UIMessage = {
+        id: uid(),
+        role: "assistant",
+        parts: [{ type: "text", text: data.text || "_(empty response)_" }],
+      };
+      setMessages((prev) => [...prev, aMsg]);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  useImperativeHandle(ref, () => ({ ask: (p: string) => submit(p) }), [busy]);
+  useImperativeHandle(ref, () => ({ ask: (p: string) => void submit(p) }), [busy, messages]);
 
   return (
     <div className="flex flex-col h-full border border-border bg-card/60 backdrop-blur">
-      {/* header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-secondary/40">
         <div className="flex items-center gap-3 font-mono text-xs tracking-widest">
           <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-primary" />
-          <span className="text-primary">ORACLE ALPHA ∞</span>
-          <span className="text-muted-foreground">/ RECURSIVE SYNTHESIS ENGINE</span>
+          <span className="text-primary">OMEGA THETA ∞</span>
+          <span className="text-muted-foreground">/ DATA-DRIVEN SYNTHESIS · UNLIMITED PROMPTS</span>
         </div>
         <div className="flex gap-1.5">
           {AGENTS.map((a) => (
-            <div
-              key={a.k}
-              className="px-2 py-0.5 text-[9px] font-mono tracking-wider border"
-              style={{ borderColor: a.c, color: a.c }}
-              title={`${a.k} AGENT`}
-            >
-              {a.k}
-            </div>
+            <div key={a.k} className="px-2 py-0.5 text-[9px] font-mono tracking-wider border"
+              style={{ borderColor: a.c, color: a.c }} title={`${a.k} LAYER`}>{a.k}</div>
           ))}
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-5 scanlines"
-      >
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-5 scanlines">
         {messages.length === 0 && (
           <div className="font-mono text-xs text-muted-foreground space-y-4">
             <div>
-              <span className="text-primary">ORACLE://</span> session initialized.
-              6 agents online. Memory: this thread persists across reloads.
+              <span className="text-primary">OMEGA://</span> Pure data + math engine. No LLM in-loop. No prompt limits.
+              Live Yahoo/NASDAQ feed + Oracle 100-formula behavioral state-space.
             </div>
             <div>
               <span className="text-accent">QUERY EXAMPLES:</span>
               <div className="mt-2 grid gap-1.5">
                 {PROMPTS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => submit(p)}
-                    className="text-left px-3 py-2 border border-border bg-background/40 hover:bg-secondary hover:border-primary/50 transition-colors text-foreground"
-                  >
+                  <button key={p} onClick={() => submit(p)}
+                    className="text-left px-3 py-2 border border-border bg-background/40 hover:bg-secondary hover:border-primary/50 transition-colors text-foreground">
                     &gt; {p}
                   </button>
                 ))}
@@ -135,105 +128,36 @@ export const OracleConsole = forwardRef<OracleHandle, {
         {messages.map((m) => (
           <div key={m.id} className="font-mono text-sm">
             <div className="text-[10px] tracking-widest mb-1">
-              {m.role === "user" ? (
-                <span className="text-accent">USER://</span>
-              ) : (
-                <span className="text-primary">ORACLE://</span>
-              )}
+              {m.role === "user"
+                ? <span className="text-accent">USER://</span>
+                : <span className="text-primary">OMEGA://</span>}
             </div>
-            <div
-              className="pl-3 border-l-2"
-              style={{ borderColor: m.role === "user" ? "var(--accent)" : "var(--primary)" }}
-            >
-              {m.parts.map((p, i) => {
-                if (p.type === "text") {
-                  return m.role === "assistant" ? (
-                    <div
-                      key={i}
-                      className="prose prose-invert prose-sm max-w-none prose-headings:text-primary prose-headings:font-mono prose-headings:tracking-wider prose-strong:text-primary prose-table:text-xs prose-code:text-accent prose-code:bg-secondary prose-code:px-1 prose-code:rounded-none prose-th:border-border prose-td:border-border prose-table:border prose-table:border-border"
-                    >
-                      <ReactMarkdown>{p.text}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <div key={i} className="whitespace-pre-wrap text-foreground">
-                      {p.text}
-                    </div>
-                  );
-                }
-                if (p.type.startsWith("tool-")) {
-                  const tp = p as any;
-                  const name = p.type.replace("tool-", "");
-                  const state = tp.state as string;
-                  return (
-                    <details
-                      key={i}
-                      className="my-2 border border-border bg-background/60 text-xs"
-                    >
-                      <summary className="cursor-pointer px-2 py-1 flex items-center gap-2 list-none">
-                        <span className="text-accent">⟐</span>
-                        <span className="text-muted-foreground tracking-wider">TOOL</span>
-                        <span className="text-primary">{name}</span>
-                        <span className="ml-auto text-[10px] text-muted-foreground">
-                          {state === "output-available"
-                            ? "✓ OK"
-                            : state === "output-error"
-                              ? "✗ ERR"
-                              : "… RUNNING"}
-                        </span>
-                      </summary>
-                      <div className="border-t border-border p-2 space-y-2 max-h-72 overflow-auto">
-                        {tp.input && (
-                          <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap">
-                            {JSON.stringify(tp.input, null, 2)}
-                          </pre>
-                        )}
-                        {tp.output && (
-                          <pre className="text-[10px] text-foreground whitespace-pre-wrap">
-                            {JSON.stringify(tp.output, null, 2)}
-                          </pre>
-                        )}
-                      </div>
-                    </details>
-                  );
-                }
-                return null;
-              })}
+            <div className="pl-3 border-l-2"
+              style={{ borderColor: m.role === "user" ? "var(--accent)" : "var(--primary)" }}>
+              {m.parts.map((p, i) => p.type === "text" ? (
+                m.role === "assistant" ? (
+                  <div key={i} className="prose prose-invert prose-sm max-w-none prose-headings:text-primary prose-headings:font-mono prose-headings:tracking-wider prose-strong:text-primary prose-table:text-xs prose-code:text-accent prose-code:bg-secondary prose-code:px-1 prose-code:rounded-none">
+                    <ReactMarkdown>{p.text}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <div key={i} className="whitespace-pre-wrap text-foreground">{p.text}</div>
+                )
+              ) : null)}
             </div>
           </div>
         ))}
 
-        {status === "submitted" && (
+        {busy && (
           <div className="font-mono text-xs text-muted-foreground">
             <span className="pulse-dot inline-block h-1.5 w-1.5 rounded-full bg-primary mr-2" />
-            RECURSIVE SYNTHESIS RUNNING…
+            SYNTHESIZING…
           </div>
         )}
-        {error && (() => {
-          const msg = error.message ?? String(error);
-          const isPayment = msg.includes("402") || /payment\s*required/i.test(msg);
-          const isRate = msg.includes("429");
-          if (isPayment) {
-            return (
-              <div className="font-mono text-xs border border-warn/60 bg-warn/10 p-3 space-y-1">
-                <div className="text-warn tracking-widest">▲ AI CREDITS EXHAUSTED</div>
-                <div className="text-foreground">The Lovable AI Gateway is out of credits for this workspace. Prompts will resume once credits are topped up.</div>
-                <div className="text-muted-foreground text-[10px]">Settings → Workspace → Usage → add credits. (Default model is already the cheapest tier — google/gemini-3-flash-preview.)</div>
-              </div>
-            );
-          }
-          if (isRate) {
-            return (
-              <div className="font-mono text-xs border border-warn/60 bg-warn/10 p-2 text-warn">
-                ▲ Rate limited — wait ~30s and re-run.
-              </div>
-            );
-          }
-          return (
-            <div className="font-mono text-xs text-destructive border border-destructive/50 p-2">
-              ERR: {msg}
-            </div>
-          );
-        })()}
+        {error && (
+          <div className="font-mono text-xs text-destructive border border-destructive/50 p-2">
+            ERR: {error}
+          </div>
+        )}
       </div>
 
       <div className="border-t border-border bg-secondary/40 p-2">
@@ -242,36 +166,18 @@ export const OracleConsole = forwardRef<OracleHandle, {
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit(input);
-              }
-            }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); } }}
             rows={2}
-            placeholder="Query the engine…  (e.g. 'multi-agent synthesis on TSLA')"
+            placeholder="Query the engine…  (e.g. 'NVDA deep' or 'market pulse')"
             className="flex-1 bg-background border border-border px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
           />
-          <div className="flex flex-col gap-1">
-            <button
-              onClick={() => submit(input)}
-              disabled={busy || !input.trim()}
-              className="px-4 py-2 font-mono text-xs tracking-widest bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-30 transition-opacity"
-            >
-              EXEC
-            </button>
-            {busy && (
-              <button
-                onClick={() => stop()}
-                className="px-4 py-1 font-mono text-[10px] tracking-widest border border-destructive text-destructive hover:bg-destructive/20"
-              >
-                STOP
-              </button>
-            )}
-          </div>
+          <button onClick={() => submit(input)} disabled={busy || !input.trim()}
+            className="px-4 py-2 font-mono text-xs tracking-widest bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-30 transition-opacity">
+            EXEC
+          </button>
         </div>
         <div className="mt-1 text-[10px] font-mono text-muted-foreground tracking-wider">
-          ⏎ EXEC · ⇧⏎ NEWLINE · NASDAQ/YAHOO FEED · MEMORY ON · NOT INVESTMENT ADVICE
+          ⏎ EXEC · ⇧⏎ NEWLINE · NASDAQ/YAHOO FEED · PURE DATA · NO LLM · NOT INVESTMENT ADVICE
         </div>
       </div>
     </div>
