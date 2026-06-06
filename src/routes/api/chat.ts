@@ -35,29 +35,42 @@ const STOP = new Set([
   "BIG","TOP","HOT","NEW","NEXT","SHOW","TELL","GIVE","BAG","TAB","TABS",
   "ADD","PIN","RUN","ASK","RIGHT","NOW","AI","ETF","CEO","NYSE","NASDAQ",
   "USA","USD","EUR","GBP","JPY","CNY","API","UI","ATH","ATL","52W","52WK",
-  "RSI","MACD","SMA","EMA","ATR","VIX","SPY","QQQ","DIA","IWM","DXY",
+  "RSI","MACD","SMA","EMA","ATR","VIX","DXY",
   "BUY","SELL","HOLD","LONG","SHORT","CALL","PUT","BULL","BEAR","DEEP",
   "FULL","BRIEF","REPORT","SYNTHESIS","MULTI","AGENT","BEHAVIORAL","ANALYSIS",
   "MARKET","STOCK","STOCKS","PRICE","TREND","VOLUME","NEWS","MACRO","SIM",
   "SIMULATE","SIMULATION","FEAR","GREED","REGIME","WATCH","PRIVATE","EQUITY",
   "EXPLAIN","LEADER","FINDS","MOVERS","REVIEW","DCA","ROI","PE","PEG","EPS",
+  "TMR","TMRW","TODAY","TONIGHT","TONITE","TOMORROW","YESTERDAY","WEEK","MONTH","YEAR",
+  "I","A","AN","OF","ON","IN","IS","IT","TO","BE","DO","GO","NO","SO","UP","US","WE","MY","ME",
+  "MEANT","MEAN","JUST","LIKE","WANT","NEED","PLEASE","HELP","OK","OKAY","YES","YEAH","NAH",
+  "PLS","THX","THANKS","HEY","HI","HELLO","SURE","COOL","NICE","GOOD","BAD","BEST","WORST",
+  "ANY","ALL","SOME","MANY","FEW","MORE","LESS","ONE","TWO","FIVE","TEN",
+  "GET","GOT","CAN","WILL","WOULD","SHOULD","COULD","MAYBE","ABOUT","OVER","UNDER",
+  "PICK","PICKS","IDEA","IDEAS","WATCHLIST","PORTFOLIO","HOLD","HOLDING",
 ]);
 
-const VALID_SYMBOL = /^\$?[A-Z][A-Z0-9.\-]{0,9}$/;
+const VALID_SYMBOL = /^[A-Z][A-Z0-9.\-]{0,9}$/;
+
+// Known short common-word collisions that are also real tickers — only accept
+// if explicitly $-prefixed.
+const REQUIRE_DOLLAR = new Set(["A","M","T","F","K","V","X","Z","ON","IT","IS","BE","SO","GO","ARE","WAS","HAS","HAD","WHO"]);
 
 function extractSymbols(text: string): string[] {
   const out = new Set<string>();
   // explicit $TICKER tokens always win
-  for (const m of text.matchAll(/\$([A-Z][A-Z0-9.\-]{0,9})/g)) out.add(m[1].toUpperCase());
+  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9.\-]{0,9})/g)) out.add(m[1].toUpperCase());
+  // tokens already UPPERCASE in source — likely a real ticker reference
   for (const raw of text.split(/[^A-Za-z0-9.\-$^]+/)) {
-    const t = raw.toUpperCase().replace(/^\$/, "");
-    if (!t || t.length > 6 || t.length < 1) continue;
-    if (!VALID_SYMBOL.test(t)) continue;
-    if (STOP.has(t)) continue;
-    if (/^\d+$/.test(t)) continue;
-    // require at least one alpha
-    if (!/[A-Z]/.test(t)) continue;
-    out.add(t);
+    if (!raw || raw.startsWith("$")) continue;
+    // must be all-uppercase as-typed (allow digits, dot, dash)
+    if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(raw)) continue;
+    if (raw.length < 1 || raw.length > 6) continue;
+    if (!VALID_SYMBOL.test(raw)) continue;
+    if (STOP.has(raw)) continue;
+    if (REQUIRE_DOLLAR.has(raw)) continue;
+    if (/^\d+$/.test(raw)) continue;
+    out.add(raw);
   }
   return Array.from(out).slice(0, 6);
 }
