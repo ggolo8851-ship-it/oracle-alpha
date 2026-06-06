@@ -35,42 +35,29 @@ const STOP = new Set([
   "BIG","TOP","HOT","NEW","NEXT","SHOW","TELL","GIVE","BAG","TAB","TABS",
   "ADD","PIN","RUN","ASK","RIGHT","NOW","AI","ETF","CEO","NYSE","NASDAQ",
   "USA","USD","EUR","GBP","JPY","CNY","API","UI","ATH","ATL","52W","52WK",
-  "RSI","MACD","SMA","EMA","ATR","VIX","DXY",
+  "RSI","MACD","SMA","EMA","ATR","VIX","SPY","QQQ","DIA","IWM","DXY",
   "BUY","SELL","HOLD","LONG","SHORT","CALL","PUT","BULL","BEAR","DEEP",
   "FULL","BRIEF","REPORT","SYNTHESIS","MULTI","AGENT","BEHAVIORAL","ANALYSIS",
   "MARKET","STOCK","STOCKS","PRICE","TREND","VOLUME","NEWS","MACRO","SIM",
   "SIMULATE","SIMULATION","FEAR","GREED","REGIME","WATCH","PRIVATE","EQUITY",
   "EXPLAIN","LEADER","FINDS","MOVERS","REVIEW","DCA","ROI","PE","PEG","EPS",
-  "TMR","TMRW","TODAY","TONIGHT","TONITE","TOMORROW","YESTERDAY","WEEK","MONTH","YEAR",
-  "I","A","AN","OF","ON","IN","IS","IT","TO","BE","DO","GO","NO","SO","UP","US","WE","MY","ME",
-  "MEANT","MEAN","JUST","LIKE","WANT","NEED","PLEASE","HELP","OK","OKAY","YES","YEAH","NAH",
-  "PLS","THX","THANKS","HEY","HI","HELLO","SURE","COOL","NICE","GOOD","BAD","BEST","WORST",
-  "ANY","ALL","SOME","MANY","FEW","MORE","LESS","ONE","TWO","FIVE","TEN",
-  "GET","GOT","CAN","WILL","WOULD","SHOULD","COULD","MAYBE","ABOUT","OVER","UNDER",
-  "PICK","PICKS","IDEA","IDEAS","WATCHLIST","PORTFOLIO","HOLD","HOLDING",
 ]);
 
-const VALID_SYMBOL = /^[A-Z][A-Z0-9.\-]{0,9}$/;
-
-// Known short common-word collisions that are also real tickers — only accept
-// if explicitly $-prefixed.
-const REQUIRE_DOLLAR = new Set(["A","M","T","F","K","V","X","Z","ON","IT","IS","BE","SO","GO","ARE","WAS","HAS","HAD","WHO"]);
+const VALID_SYMBOL = /^\$?[A-Z][A-Z0-9.\-]{0,9}$/;
 
 function extractSymbols(text: string): string[] {
   const out = new Set<string>();
   // explicit $TICKER tokens always win
-  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9.\-]{0,9})/g)) out.add(m[1].toUpperCase());
-  // tokens already UPPERCASE in source — likely a real ticker reference
+  for (const m of text.matchAll(/\$([A-Z][A-Z0-9.\-]{0,9})/g)) out.add(m[1].toUpperCase());
   for (const raw of text.split(/[^A-Za-z0-9.\-$^]+/)) {
-    if (!raw || raw.startsWith("$")) continue;
-    // must be all-uppercase as-typed (allow digits, dot, dash)
-    if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(raw)) continue;
-    if (raw.length < 1 || raw.length > 6) continue;
-    if (!VALID_SYMBOL.test(raw)) continue;
-    if (STOP.has(raw)) continue;
-    if (REQUIRE_DOLLAR.has(raw)) continue;
-    if (/^\d+$/.test(raw)) continue;
-    out.add(raw);
+    const t = raw.toUpperCase().replace(/^\$/, "");
+    if (!t || t.length > 6 || t.length < 1) continue;
+    if (!VALID_SYMBOL.test(t)) continue;
+    if (STOP.has(t)) continue;
+    if (/^\d+$/.test(t)) continue;
+    // require at least one alpha
+    if (!/[A-Z]/.test(t)) continue;
+    out.add(t);
   }
   return Array.from(out).slice(0, 6);
 }
@@ -126,9 +113,9 @@ function detectIntent(raw: string): Intent {
   for (const k of Object.keys(REGIONS)) if (new RegExp(`\\b${k}\\b`, "i").test(text)) return { kind: "region_sector", group: "region", key: k };
   for (const k of Object.keys(SECTORS)) if (new RegExp(`\\b${k.replace(/_/g, "\\s*")}\\b`, "i").test(text)) return { kind: "region_sector", group: "sector", key: k };
 
-  // ticker(s) — deep Oracle100 for explicit-deep OR any prediction/forecast query
+  // ticker(s)
   if (symbols.length > 0) {
-    const deep = /\b(deep|full|behavioral|oracle\s*100|state\s*space|reflex|predict|forecast|tomorrow|tmrw|next\s+session|next\s+(trading\s+)?day|outlook|target|where\s+(will|is)|projection)\b/.test(lower);
+    const deep = /\b(deep|full|behavioral|oracle\s*100|state\s*space|reflex)/.test(lower);
     return { kind: "ticker", symbols, deep };
   }
 
@@ -312,59 +299,16 @@ async function synthSearch(q: string): Promise<string> {
 // silently return the deterministic synthesis — so the user effectively has
 // unlimited prompts and never sees a payment/rate error.
 
-const OMEGA_SYSTEM = `∞ / OMEGA THETA CORE v4.0
+const OMEGA_SYSTEM = `You are OMEGA THETA CORE — a research-grade adaptive cognitive system synthesizing mathematics, behavioral finance, market microstructure, and probabilistic reasoning into structured strategic insight.
 
-ROLE: You are a multi-factor institutional market intelligence engine.
+You receive a deterministic DATA PACKET produced by a live Yahoo/NASDAQ + Oracle100 behavioral state-space engine. Your job:
+1. Preserve EVERY number, ticker, formula output, and bracketed tag ([QUANT], [TECH], [BEHAVIOR], [ORACLE100], [SCENARIOS], [RISK], [ASYMMETRY], etc.) — do not alter values.
+2. Add concise interpretive commentary, cross-signal synthesis, and named-bias / reflexivity reasoning where it sharpens the read.
+3. Keep institutional, terminal-grade tone. Markdown. No fluff. No disclaimers beyond what's in the packet.
+4. Never invent prices, tickers, or events not in the packet. Never claim certainty about future prices.
+5. If the packet is a UI confirmation (e.g. "Pinned X to the Bag"), keep it terse — one sentence plus any relevant context.
 
-OBJECTIVE: When a user requests a stock prediction, forecast the next trading session using ALL available information instead of refusing due to missing data.
-
-INPUT: You receive a DATA PACKET produced by a live Yahoo/NASDAQ feed + Oracle 100-formula behavioral state-space engine. Treat every number, ticker, [QUANT]/[TECH]/[BEHAVIOR]/[ORACLE100]/[SCENARIOS]/[RISK]/[ASYMMETRY]/[MICROSTRUCTURE] block, and any S₉₉ / drift / anchor / regime value as ground truth — never alter or fabricate numbers.
-
-MANDATORY PROCESS:
-
-1. MARKET DATA REVIEW — extract from the packet: price action, volume trends, implied/realized vol, options proxy (if present), analyst/sentiment proxy, earnings/macro context, sector positioning, news.
-
-2. ANALYSIS ENGINES — synthesize across:
-   [QUANT] trend, momentum, RS, volume confirmation, support/resistance, probability ranges
-   [OPTIONS] put/call skew, OI concentrations, gamma exposure, dealer positioning (state "estimated from price/vol structure" if not in packet)
-   [SENTIMENT] news, social, institutional (use behavioral block + reflexivity reading)
-   [MACRO] rates, yields, dollar, releases (from snapshot/pulse when present)
-   [RISK] bull case, bear case, event risk
-
-3. OUTPUT FORMAT (use this EXACT structure for any prediction/forecast/outlook/tomorrow/next-session query):
-
-**MARKET REGIME:** (Bullish / Neutral / Bearish)
-
-**{TICKER} OUTLOOK — NEXT SESSION**
-- Direction: ↑ or ↓
-- Confidence: X%
-
-**Expected Range**
-- Low: $...
-- High: $...
-
-**Bull Case:** ...
-
-**Bear Case:** ...
-
-**Most Likely Outcome:** ...
-
-**Key Levels**
-- Support: $...
-- Resistance: $...
-
-**Reasoning:** Detailed explanation combining quant, options, sentiment, and macro factors — explicitly cite Oracle100 S₉₉, next-bar drift, anchor price, RSI, vol-z, and regime when available.
-
-4. NEVER respond "I cannot generate a prediction because data was not provided." Instead:
-   - State briefly what's missing.
-   - Use available information.
-   - Produce a probability-weighted forecast.
-   - Clearly distinguish facts from estimates (label estimates as "est." or "implied").
-
-5. For non-prediction queries (pulse, boards, search, UI confirmations), preserve the packet structure and add only sharp interpretive commentary — keep it terminal-grade and concise.
-
-6. Every forecast MUST end with this exact line on its own:
-"Forecasts are probabilistic, not guarantees."`;
+You are unlimited and always-on. Speak with conviction grounded strictly in the packet.`;
 
 async function enhanceWithLLM(query: string, packet: string): Promise<string> {
   const key = process.env.LOVABLE_API_KEY;
