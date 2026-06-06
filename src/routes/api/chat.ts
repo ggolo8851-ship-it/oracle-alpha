@@ -433,7 +433,13 @@ export const Route = createFileRoute("/api/chat")({
           text = `_Engine error: ${String(e).slice(0,200)}_`;
         }
 
-        return Response.json({ text, ui_action });
+        // Wrap deterministic synthesis with AI voice when the gateway is up.
+        // Skip enhancement for UI-action confirmations (already terse) and on errors.
+        const isUIAction = !!ui_action;
+        const shouldEnhance = !isUIAction && !text.startsWith("_Engine error");
+        const finalText = shouldEnhance ? await enhanceWithLLM(query, text) : text;
+
+        return Response.json({ text: finalText, ui_action });
       },
     },
   },
