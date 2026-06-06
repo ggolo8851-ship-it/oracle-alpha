@@ -94,7 +94,7 @@ export const OracleConsole = forwardRef<OracleHandle, {
         <div className="flex items-center gap-3 font-mono text-xs tracking-widest">
           <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-primary" />
           <span className="text-primary">OMEGA THETA ∞</span>
-          <span className="text-muted-foreground">/ DATA-DRIVEN SYNTHESIS · UNLIMITED PROMPTS</span>
+          <span className="text-muted-foreground">/ ADAPTIVE COGNITIVE SYSTEM · UNLIMITED PROMPTS</span>
         </div>
         <div className="flex gap-1.5">
           {AGENTS.map((a) => (
