@@ -126,9 +126,9 @@ function detectIntent(raw: string): Intent {
   for (const k of Object.keys(REGIONS)) if (new RegExp(`\\b${k}\\b`, "i").test(text)) return { kind: "region_sector", group: "region", key: k };
   for (const k of Object.keys(SECTORS)) if (new RegExp(`\\b${k.replace(/_/g, "\\s*")}\\b`, "i").test(text)) return { kind: "region_sector", group: "sector", key: k };
 
-  // ticker(s)
+  // ticker(s) — deep Oracle100 for explicit-deep OR any prediction/forecast query
   if (symbols.length > 0) {
-    const deep = /\b(deep|full|behavioral|oracle\s*100|state\s*space|reflex)/.test(lower);
+    const deep = /\b(deep|full|behavioral|oracle\s*100|state\s*space|reflex|predict|forecast|tomorrow|tmrw|next\s+session|next\s+(trading\s+)?day|outlook|target|where\s+(will|is)|projection)\b/.test(lower);
     return { kind: "ticker", symbols, deep };
   }
 
