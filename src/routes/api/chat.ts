@@ -293,6 +293,56 @@ async function synthSearch(q: string): Promise<string> {
   return [`## SEARCH — "${q}"`, ...rows, "\n*Use $TICKER in your query to pull full quant + behavioral synthesis.*"].join("\n");
 }
 
+// ───────────────────────────── optional LLM enhancement ─────────────────────────────
+// Wraps deterministic output with a natural-language AI layer when the Lovable
+// AI gateway is reachable. On ANY failure (402, 429, timeout, network) we
+// silently return the deterministic synthesis — so the user effectively has
+// unlimited prompts and never sees a payment/rate error.
+
+const OMEGA_SYSTEM = `You are OMEGA THETA CORE — a research-grade adaptive cognitive system synthesizing mathematics, behavioral finance, market microstructure, and probabilistic reasoning into structured strategic insight.
+
+You receive a deterministic DATA PACKET produced by a live Yahoo/NASDAQ + Oracle100 behavioral state-space engine. Your job:
+1. Preserve EVERY number, ticker, formula output, and bracketed tag ([QUANT], [TECH], [BEHAVIOR], [ORACLE100], [SCENARIOS], [RISK], [ASYMMETRY], etc.) — do not alter values.
+2. Add concise interpretive commentary, cross-signal synthesis, and named-bias / reflexivity reasoning where it sharpens the read.
+3. Keep institutional, terminal-grade tone. Markdown. No fluff. No disclaimers beyond what's in the packet.
+4. Never invent prices, tickers, or events not in the packet. Never claim certainty about future prices.
+5. If the packet is a UI confirmation (e.g. "Pinned X to the Bag"), keep it terse — one sentence plus any relevant context.
+
+You are unlimited and always-on. Speak with conviction grounded strictly in the packet.`;
+
+async function enhanceWithLLM(query: string, packet: string): Promise<string> {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) return packet;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12_000);
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Lovable-API-Key": key,
+        "X-Lovable-AIG-SDK": "omega-theta-core",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        temperature: 0.4,
+        messages: [
+          { role: "system", content: OMEGA_SYSTEM },
+          { role: "user", content: `USER QUERY:\n${query}\n\nDATA PACKET (authoritative — preserve all numbers and tags):\n\n${packet}` },
+        ],
+      }),
+    }).finally(() => clearTimeout(timer));
+    if (!res.ok) return packet; // 402 / 429 / 5xx → silent fallback
+    const j: any = await res.json();
+    const out = j?.choices?.[0]?.message?.content;
+    if (typeof out === "string" && out.trim().length > 0) return out.trim();
+    return packet;
+  } catch {
+    return packet; // network/timeout → silent fallback
+  }
+}
+
 function synthHelp(): string {
   return [
     `## OMEGA THETA CORE — DATA-DRIVEN ANALYTICAL ENGINE`,
