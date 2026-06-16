@@ -108,8 +108,8 @@ export const OracleConsole = forwardRef<OracleHandle, {
         {messages.length === 0 && (
           <div className="font-mono text-xs text-muted-foreground space-y-4">
             <div>
-              <span className="text-primary">OMEGA://</span> Pure data + math engine. No LLM in-loop. No prompt limits.
-              Live Yahoo/NASDAQ feed + Oracle 100-formula behavioral state-space.
+              <span className="text-primary">OMEGA://</span> Adaptive cognitive system. Ask anything — tickers, regimes, theory, free-form.
+              Live Yahoo/NASDAQ feed + Oracle 100-formula behavioral state-space underneath.
             </div>
             <div>
               <span className="text-accent">QUERY EXAMPLES:</span>
