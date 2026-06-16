@@ -154,8 +154,8 @@ export const OracleConsole = forwardRef<OracleHandle, {
           </div>
         )}
         {error && (
-          <div className="font-mono text-xs text-destructive border border-destructive/50 p-2">
-            ERR: {error}
+          <div className="font-mono text-[10px] text-muted-foreground border border-border p-2">
+            engine retry in progress — {error.slice(0, 80)}
           </div>
         )}
       </div>
