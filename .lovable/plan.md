@@ -1,76 +1,56 @@
-## Anomaly ∞ — Upgrade Plan
+## Goal
 
-Scope: add memory, sharpen the math, deepen behavioral finance, add a universal stock search, and add a Top 10 Finds board. No layout teardown — everything plugs into the existing terminal.
+Make the OMEGA THETA console behave like a real AI chatbot that answers **any** question the user asks (not just ticker/macro intents), while keeping all existing formulas, Oracle100 math, and data tools intact and avoiding any "Payment Required / credits" failure the user ever sees.
 
-### 1. Chat memory (so Oracle remembers)
+## Problem with the current state
 
-- Persist threads + messages in `localStorage` (no auth required, instant, survives reload). Lovable Cloud not enabled — staying frontend-only keeps "don't change major things".
-- Add a thin left rail in `OracleConsole`: thread list, "+ NEW THREAD", click to switch, delete.
-- Use AI SDK `useChat({ id: threadId, messages: initialMessages })` so each thread has its own stream + history. Full message array is sent to `/api/chat` every turn, so the model has true conversational recall.
-- Auto-title each thread from the first user message.
+`src/routes/api/chat.ts` is a deterministic router. If the user asks something off-script (e.g. "explain reflexivity", "what should I do with my portfolio", "summarize today"), `detectIntent` falls through to `synthHelp()` and prints the help menu. The LLM enhancement layer I added only re-phrases the deterministic packet — it never *generates* an answer when there is no packet. That's why it stops feeling like an AI.
 
-### 2. Better quant formulas (server-side, fed to the model)
+Also, on a 402/429 from the gateway the user currently gets the raw help menu instead of a real answer.
 
-Upgrade `get_history` tool output and add a new `get_technicals` tool. Computed in `src/routes/api/chat.ts` from real Yahoo OHLCV — model receives numbers, not vibes.
+## Fix (high level)
 
-- **Returns**: log returns, total return, CAGR
-- **Risk**: annualized vol (already present, fix to use sample variance n-1), **downside deviation**, **max drawdown** + duration, **Sharpe** (vs. ^TNX risk-free), **Sortino**, **Calmar**
-- **Momentum**: RSI(14), MACD(12,26,9), ROC(10/30/90)
-- **Trend**: SMA(20/50/200), EMA(12/26), price vs. SMA200 (regime flag)
-- **Volatility**: ATR(14), Bollinger Bands(20,2), realized vol 20d/60d, vol-of-vol
-- **Microstructure**: 20d avg volume, volume z-score, dollar volume
+Switch the chat endpoint to an **AI-first** architecture with a **deterministic safety net**:
 
-### 3. Behavioral finance layer (new tool: `get_behavioral_read`)
+1. **Primary path — real LLM chat.** Every user message goes to Gemini (via the Lovable AI Gateway) with:
+   - The OMEGA THETA system prompt (cognitive-system persona, no certainty claims).
+   - Live tool outputs injected as context whenever the message mentions a ticker, macro topic, news, private equity, etc. — pulled from the existing functions (`computeOracle100`, `tickerBehavioral`, `getPulseCached`, `getTopFindsCached`, `getNextBigCached`, `getNewsCached`, `getPrivateEquityCached`, `getQuotes`, `getHistory`, `indicators.*`).
+   - The same UI-action grammar (`ui_add_to_bag`, `ui_simulate`, `ui_switch_tab`, …) so the model can drive the website.
+   - **No formula changes.** Oracle100, indicators, behavioral scoring, scenarios, private-equity scoring all stay byte-identical.
 
-Computed from real market data — no fakes:
-- **Fear/Greed composite** from VIX level + VIX percentile (1y), SPY 125d momentum, SPY distance from 200dma, put/call proxy via ^VIX/^VXN spread, breadth proxy via ^RUT/^GSPC ratio change. Output 0–100 with regime label.
-- **Reflexivity score**: 20d correlation between price change and volume change (Soros-style feedback strength).
-- **Crowding score**: rolling vol compression + RSI extreme + distance from 50dma → FOMO/capitulation flag.
-- **Anchoring distance**: % from 52w high and 52w low.
-- **Recency-bias warning** when last 5d return > 2σ of trailing 60d.
+2. **Unlimited-prompt guarantee — deterministic fallback.** If the gateway returns 402 (credits), 429 (rate limit), 5xx, or times out:
+   - Quietly fall back to the existing deterministic synthesizer for the matched intent.
+   - If no intent matches (free-form question), fall back to a generic "engine offline, here's what the data shows right now" packet built from `marketFearGreed` + snapshot, so the user *always* gets a real reply — never a credit error, never a raw help dump.
 
-System prompt updated so BEHAVIOR agent must cite these numbers and name the specific bias (anchoring, recency, herding, loss aversion, disposition, narrative reflexivity) it sees.
+3. **UI actions still work in both modes.** Whether the answer comes from the LLM or the fallback, the response shape stays `{ text, ui_action }` so `OracleConsole` → `index.tsx` keeps routing tab switches, bag adds, simulations, etc.
 
-### 4. Universal stock search (any NASDAQ/NYSE/global ticker)
+4. **Console UX cleanup.** Restore the "AI" framing in `OracleConsole.tsx` header copy ("ADAPTIVE COGNITIVE SYSTEM") and make the error pill never show credit/payment language — only a soft "retrying with local engine…" if both paths fail.
 
-- New `<SymbolSearch />` component in the header. Calls existing `searchSymbols` (Yahoo `/v1/finance/search`) — already covers every listed equity/ETF/index/crypto/FX/commodity globally.
-- Debounced typeahead, keyboard nav, shows symbol + name + exchange + type.
-- Selecting opens a `<TickerDetail />` slide-over panel with live quote, 52w range bar, key stats from chart meta, mini sparkline (6mo close array via existing `getHistory`), and a "Ask Oracle about $TICKER" button that injects a multi-agent prompt into the active thread.
-- Accuracy: data is pulled live from Yahoo's NASDAQ-sourced feed at request time — same source institutions use for delayed quotes. We will add a clear "~15 min delayed · source: Yahoo/NASDAQ" timestamp on the panel.
+## What does *not* change
 
-### 5. Top 10 Finds board
+- `src/lib/oracle100.ts` — every H/I/E/S formula kept exactly.
+- `src/lib/behavioral.ts`, `src/lib/indicators.ts`, `src/lib/private-equity.ts`, `src/lib/universes.ts`, `src/lib/watchlist.ts` — untouched.
+- All `/api/*` data routes (`pulse`, `news`, `top-finds`, `next-big`, `private-equity`, `simulate`, `ticker`, `snapshot`, `search`, `region`, `alerts`) — untouched.
+- All UI tabs (PULSE, MOVERS, NEWS, GLOBAL, ALERTS, WATCH, PRIVATE), the Bag, the simulation drawer, ticker detail, watch alerts — untouched.
 
-- New `<TopFinds />` panel below `MacroGrid`.
-- New server route `/api/top-finds` that:
-  1. Pulls quotes for a curated 60-symbol universe (mega/large-cap US + key ETFs + leaders in semis/AI/energy/crypto-proxy).
-  2. Scores each on a composite: 30% momentum (5d + 20d return), 25% trend (price vs SMA50/200), 20% relative strength vs SPY, 15% volume thrust (today vs 20d avg), 10% volatility-adjusted quality (Sharpe-lite proxy from short window).
-  3. Returns top 10 sorted with a `signal` tag (BREAKOUT / MOMENTUM / REVERSAL / ACCUMULATION).
-- UI: rank, ticker, price, %chg, score bar, signal chip. Click row → opens `<TickerDetail />`. Refresh every 5 min.
-- New tool `get_top_finds` exposed to the model so the OPPORTUNITY agent can cite the live board.
+## Files to edit
 
-### 6. System prompt tightening (no rewrite, just sharpen)
+- `src/routes/api/chat.ts` — replace deterministic-first routing with **LLM-first + tool-context injection + deterministic fallback**. Keep every existing `synth*` helper as the fallback layer.
+- `src/components/OracleConsole.tsx` — small copy + error-state tweak (header tagline, friendly retry pill).
 
-- Force every numeric claim to be sourced from a tool call.
-- Add explicit instruction to call `get_technicals` + `get_behavioral_read` whenever a single ticker is the subject.
-- Add the named bias requirement above.
-- Keep tone, agent roster, scenario format, and "Not investment advice" tag unchanged.
+## Files to add
 
-### Technical section
+None.
 
-Files to add:
-- `src/lib/indicators.ts` — pure functions: rsi, macd, sma, ema, atr, bollinger, drawdown, sharpe, sortino, downsideDev, returns, corr.
-- `src/lib/behavioral.ts` — composites built from indicators + snapshot.
-- `src/lib/threads.ts` — localStorage thread CRUD + zod-validated UIMessage[] persistence.
-- `src/components/SymbolSearch.tsx`
-- `src/components/TickerDetail.tsx`
-- `src/components/TopFinds.tsx`
-- `src/components/ThreadList.tsx`
-- `src/routes/api/top-finds.ts`
+## Technical details
 
-Files to edit:
-- `src/routes/api/chat.ts` — register `get_technicals`, `get_behavioral_read`, `get_top_finds` tools; tighten system prompt; keep existing 4 tools intact.
-- `src/components/OracleConsole.tsx` — accept `threadId`/`initialMessages`, wire thread switching, add left rail.
-- `src/routes/index.tsx` — mount `SymbolSearch` in header, `TopFinds` under `MacroGrid`, `TickerDetail` slide-over, thread list rail.
-- `src/lib/yahoo.ts` — small helper to batch quote fetch with concurrency cap for the 60-symbol universe.
+- Use `@ai-sdk/openai-compatible` + `ai`'s `generateText` (already wired via `src/lib/ai-gateway.ts`) and the gateway helper pattern; default model `google/gemini-2.5-flash-lite` (cheapest tier, maximizes effective prompt count on the workspace's credit pool).
+- Tool-context budget: cap injected packet at ~6 KB so we don't blow up token cost.
+- Intent detection is reused only to decide **which tools to pre-call** for context — not to gate the response. Free-form questions get a lightweight macro+fear/greed context.
+- UI actions: the model returns a final JSON block `{"ui_action": {...}}` parsed out of the assistant message; if missing, `ui_action` is `null`.
+- Fallback path is identical to today's behavior, so the worst case is "current quality" — never worse.
+- No new env vars; uses existing `LOVABLE_API_KEY`.
 
-No backend, no auth, no schema changes. Stays on Yahoo. Existing UI, theme, and 6-agent system unchanged in spirit.
+## Risk / honesty note
+
+"Unlimited prompts" via app code is impossible — the gateway enforces credits server-side. What this plan guarantees is that the **user never sees** a credit/payment error: on gateway refusal the deterministic engine answers instead, using the same formulas, so the chat keeps working forever.
