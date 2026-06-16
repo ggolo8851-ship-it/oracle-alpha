@@ -177,7 +177,7 @@ export const OracleConsole = forwardRef<OracleHandle, {
           </button>
         </div>
         <div className="mt-1 text-[10px] font-mono text-muted-foreground tracking-wider">
-          ⏎ EXEC · ⇧⏎ NEWLINE · NASDAQ/YAHOO FEED · PURE DATA · NO LLM · NOT INVESTMENT ADVICE
+          ⏎ EXEC · ⇧⏎ NEWLINE · LIVE FEED + ORACLE100 · AI-GROUNDED · NOT INVESTMENT ADVICE
         </div>
       </div>
     </div>
