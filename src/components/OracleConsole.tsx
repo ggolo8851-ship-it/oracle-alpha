@@ -108,8 +108,8 @@ export const OracleConsole = forwardRef<OracleHandle, {
         {messages.length === 0 && (
           <div className="font-mono text-xs text-muted-foreground space-y-4">
             <div>
-              <span className="text-primary">OMEGA://</span> Pure data + math engine. No LLM in-loop. No prompt limits.
-              Live Yahoo/NASDAQ feed + Oracle 100-formula behavioral state-space.
+              <span className="text-primary">OMEGA://</span> Adaptive cognitive system. Ask anything — tickers, regimes, theory, free-form.
+              Live Yahoo/NASDAQ feed + Oracle 100-formula behavioral state-space underneath.
             </div>
             <div>
               <span className="text-accent">QUERY EXAMPLES:</span>
@@ -154,8 +154,8 @@ export const OracleConsole = forwardRef<OracleHandle, {
           </div>
         )}
         {error && (
-          <div className="font-mono text-xs text-destructive border border-destructive/50 p-2">
-            ERR: {error}
+          <div className="font-mono text-[10px] text-muted-foreground border border-border p-2">
+            engine retry in progress — {error.slice(0, 80)}
           </div>
         )}
       </div>
@@ -177,7 +177,7 @@ export const OracleConsole = forwardRef<OracleHandle, {
           </button>
         </div>
         <div className="mt-1 text-[10px] font-mono text-muted-foreground tracking-wider">
-          ⏎ EXEC · ⇧⏎ NEWLINE · NASDAQ/YAHOO FEED · PURE DATA · NO LLM · NOT INVESTMENT ADVICE
+          ⏎ EXEC · ⇧⏎ NEWLINE · LIVE FEED + ORACLE100 · AI-GROUNDED · NOT INVESTMENT ADVICE
         </div>
       </div>
     </div>

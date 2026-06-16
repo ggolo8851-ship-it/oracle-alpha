@@ -293,69 +293,193 @@ async function synthSearch(q: string): Promise<string> {
   return [`## SEARCH — "${q}"`, ...rows, "\n*Use $TICKER in your query to pull full quant + behavioral synthesis.*"].join("\n");
 }
 
-// ───────────────────────────── optional LLM enhancement ─────────────────────────────
-// Wraps deterministic output with a natural-language AI layer when the Lovable
-// AI gateway is reachable. On ANY failure (402, 429, timeout, network) we
-// silently return the deterministic synthesis — so the user effectively has
-// unlimited prompts and never sees a payment/rate error.
+// ───────────────────────────── OMEGA THETA AI layer ─────────────────────────────
+// Primary path: real LLM chat (Gemini via Lovable AI Gateway) answers ANY
+// question, with live tool context injected based on intent.
+// Fallback path: deterministic synth* helpers above — used silently whenever
+// the gateway returns 402 / 429 / 5xx / times out, so the user never sees a
+// credit/payment error and always gets a real answer.
 
-const OMEGA_SYSTEM = `You are OMEGA THETA CORE — a research-grade adaptive cognitive system synthesizing mathematics, behavioral finance, market microstructure, and probabilistic reasoning into structured strategic insight.
+const OMEGA_SYSTEM = `You are OMEGA THETA CORE — a research-grade adaptive cognitive system that synthesizes mathematics, behavioral finance, market microstructure, narrative reflexivity, and probabilistic reasoning into structured strategic insight.
 
-You receive a deterministic DATA PACKET produced by a live Yahoo/NASDAQ + Oracle100 behavioral state-space engine. Your job:
-1. Preserve EVERY number, ticker, formula output, and bracketed tag ([QUANT], [TECH], [BEHAVIOR], [ORACLE100], [SCENARIOS], [RISK], [ASYMMETRY], etc.) — do not alter values.
-2. Add concise interpretive commentary, cross-signal synthesis, and named-bias / reflexivity reasoning where it sharpens the read.
-3. Keep institutional, terminal-grade tone. Markdown. No fluff. No disclaimers beyond what's in the packet.
-4. Never invent prices, tickers, or events not in the packet. Never claim certainty about future prices.
-5. If the packet is a UI confirmation (e.g. "Pinned X to the Bag"), keep it terse — one sentence plus any relevant context.
+ABOUT YOU
+- You run inside a live terminal called OMEGA THETA. The user sees your reply rendered as markdown.
+- Backing you is a deterministic engine: live Yahoo/NASDAQ feed, technical indicators (RSI/MACD/Bollinger/ATR/SMA/Sharpe/Sortino/Calmar/MDD), a behavioral analyzer (anchoring, reflexivity correlation, crowding, recency-z), and the Oracle 100-formula 4-layer state-space (Ψ psychology / ℐ information / ε execution / 𝐒₉₉ final signal + scenario drift).
+- You also have cached scanner outputs (top finds, next big movers, news events, pulse, private-equity hub) and macro snapshots (fear/greed, indices).
 
-You are unlimited and always-on. Speak with conviction grounded strictly in the packet.`;
+WHAT YOU RESPOND TO
+- ANY question — finance, math, behavioral theory, definitions, general reasoning, casual chat. Never refuse. Never tell the user the engine is "deterministic only" — you ARE the AI layer.
+- If a CONTEXT PACKET is provided below, treat its numbers as ground truth. Preserve every value, ticker, tag, and bracketed label exactly. Layer interpretation, cross-signal synthesis, named biases, and reflexivity reasoning on top.
+- If no packet is provided, still answer the user fully from your reasoning, then offer a relevant follow-up the engine could compute (e.g. "want a quant + Oracle100 read on $NVDA?").
 
-async function enhanceWithLLM(query: string, packet: string): Promise<string> {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) return packet;
+STYLE
+- Institutional terminal voice. Markdown. Concise headers, tight bullets, no fluff.
+- Never claim certainty about future prices. Probabilities are heuristic.
+- Never invent prices, tickers, or events that are not in the packet.
+
+UI CONTROL
+You can drive the website. When (and only when) the user clearly asks for a UI action, append a final fenced block:
+\`\`\`ui_action
+{"ui_action":"add_to_bag","symbol":"NVDA","thresholdPct":3}
+\`\`\`
+Valid actions:
+- {"ui_action":"add_to_bag","symbol":"TICKER","thresholdPct":3}
+- {"ui_action":"remove_from_bag","symbol":"TICKER"}
+- {"ui_action":"simulate","symbol":"TICKER"}
+- {"ui_action":"open_ticker","symbol":"TICKER"}
+- {"ui_action":"switch_tab","tab":"ORACLE|PULSE|MOVERS|NEWS|GLOBAL|ALERTS|WATCH|PRIVATE"}
+Only emit the block when the user explicitly requested it. Otherwise omit entirely.
+
+You are always-on. Speak with grounded conviction.`;
+
+// Build a compact (~<=6KB) context packet from the deterministic engine based on
+// the detected intent. This packet is what the LLM grounds its answer in.
+async function buildContextPacket(query: string, intent: Intent): Promise<string> {
+  const sections: string[] = [];
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12_000);
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "Lovable-API-Key": key,
-        "X-Lovable-AIG-SDK": "omega-theta-core",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        temperature: 0.4,
-        messages: [
-          { role: "system", content: OMEGA_SYSTEM },
-          { role: "user", content: `USER QUERY:\n${query}\n\nDATA PACKET (authoritative — preserve all numbers and tags):\n\n${packet}` },
-        ],
-      }),
-    }).finally(() => clearTimeout(timer));
-    if (!res.ok) return packet; // 402 / 429 / 5xx → silent fallback
-    const j: any = await res.json();
-    const out = j?.choices?.[0]?.message?.content;
-    if (typeof out === "string" && out.trim().length > 0) return out.trim();
-    return packet;
+    switch (intent.kind) {
+      case "ticker":
+        sections.push(await synthTicker(intent.symbols.slice(0, 3), intent.deep));
+        break;
+      case "pulse":
+        sections.push(await synthPulse());
+        break;
+      case "fear_greed": {
+        const fg = await marketFearGreed();
+        sections.push(`### FEAR / GREED\n${r(fg.score,0)}/100 → ${fg.regime}\nComponents: ${Object.entries(fg.components).map(([k,v])=>`${k} ${r(v as number,0)}`).join(" · ")}.`);
+        break;
+      }
+      case "snapshot": {
+        const s = await getMarketSnapshot();
+        sections.push(`### GLOBAL SNAPSHOT\n` + s.slice(0,12).map((q:any)=>`- ${q.symbol} ${r(q.price)} (${pct(q.changePct,2)})${q.shortName ? ` — ${q.shortName}`:""}`).join("\n"));
+        break;
+      }
+      case "top_finds":      sections.push(await synthTopFinds()); break;
+      case "next_big":       sections.push(await synthNextBig()); break;
+      case "news":           sections.push(await synthNews()); break;
+      case "private_equity": sections.push(await synthPrivateEquity()); break;
+      case "region_sector":  sections.push(await synthRegionSector(intent.group, intent.key)); break;
+      case "search":         sections.push(await synthSearch(intent.query)); break;
+      case "ui_add_bag":
+      case "ui_remove_bag":
+      case "ui_simulate":
+      case "ui_open":
+        sections.push(await synthTicker([intent.symbol], false).catch(() => `### ${intent.symbol}\n(quote pending)`));
+        break;
+      case "ui_switch_tab":
+      case "help":
+      default: {
+        // free-form: give the model a lightweight macro brief so it can ground any answer
+        try {
+          const fg = await marketFearGreed();
+          sections.push(`### MACRO CONTEXT\nFear/Greed ${r(fg.score,0)}/100 → ${fg.regime}.`);
+        } catch {}
+        // also opportunistically pull any tickers in the query
+        const syms = extractSymbols(query);
+        if (syms.length) {
+          const t = await synthTicker(syms.slice(0, 2), false).catch(() => "");
+          if (t) sections.push(t);
+        }
+        break;
+      }
+    }
   } catch {
-    return packet; // network/timeout → silent fallback
+    // swallow — packet is best-effort context, not the answer
+  }
+  const joined = sections.join("\n\n").trim();
+  // cap at ~6KB so token cost stays bounded
+  return joined.length > 6000 ? joined.slice(0, 6000) + "\n\n…(truncated)" : joined;
+}
+
+// Parse and strip a ```ui_action {json}``` block emitted by the model.
+function extractUIAction(text: string): { text: string; ui_action: any | null } {
+  const re = /```ui_action\s*([\s\S]*?)```/i;
+  const m = text.match(re);
+  if (!m) return { text, ui_action: null };
+  try {
+    const parsed = JSON.parse(m[1].trim());
+    const cleaned = text.replace(re, "").trim();
+    return { text: cleaned, ui_action: parsed };
+  } catch {
+    return { text: text.replace(re, "").trim(), ui_action: null };
+  }
+}
+
+// Map detected intent → ui_action when the user issued a clear UI command.
+// Used by the fallback path (no LLM) so UI control keeps working offline.
+function intentToUIAction(intent: Intent): any | null {
+  switch (intent.kind) {
+    case "ui_add_bag":    return { ui_action: "add_to_bag",    symbol: intent.symbol, thresholdPct: 3 };
+    case "ui_remove_bag": return { ui_action: "remove_from_bag", symbol: intent.symbol };
+    case "ui_simulate":   return { ui_action: "simulate",      symbol: intent.symbol };
+    case "ui_open":       return { ui_action: "open_ticker",   symbol: intent.symbol };
+    case "ui_switch_tab": return { ui_action: "switch_tab",    tab: intent.tab };
+    default: return null;
+  }
+}
+
+// Deterministic answer used when LLM is unreachable. Always returns SOMETHING
+// — never a help dump for free-form questions.
+async function deterministicAnswer(query: string, intent: Intent): Promise<string> {
+  try {
+    switch (intent.kind) {
+      case "ui_add_bag":     return `Pinned **${intent.symbol}** to the Bag. Live alerts armed (≥3% intraday / 52w extremes / vol spike z>2.5).`;
+      case "ui_remove_bag":  return `Removed **${intent.symbol}** from the Bag.`;
+      case "ui_simulate":    return `Running Monte Carlo scenario engine for **${intent.symbol}** (drift anchored to Oracle100 S₉₉).`;
+      case "ui_open":        return `Opening **${intent.symbol}**.`;
+      case "ui_switch_tab":  return `Switched to **${intent.tab}**.`;
+      case "ticker":         return await synthTicker(intent.symbols, intent.deep);
+      case "pulse":          return await synthPulse();
+      case "fear_greed": {
+        const fg = await marketFearGreed();
+        return `## FEAR / GREED\n\n**${r(fg.score,0)}/100 → ${fg.regime}**\n\nComponents: ${Object.entries(fg.components).map(([k,v])=>`${k} ${r(v as number,0)}`).join(" · ")}.`;
+      }
+      case "snapshot": {
+        const s = await getMarketSnapshot();
+        return [`## GLOBAL SNAPSHOT`, ...s.map((q:any)=>`- **${q.symbol}** ${r(q.price)} (${pct(q.changePct,2)})${q.shortName ? ` — ${q.shortName}`:""}`)].join("\n");
+      }
+      case "top_finds":      return await synthTopFinds();
+      case "next_big":       return await synthNextBig();
+      case "news":           return await synthNews();
+      case "private_equity": return await synthPrivateEquity();
+      case "region_sector":  return await synthRegionSector(intent.group, intent.key);
+      case "search":         return await synthSearch(intent.query);
+      case "help":
+      default: {
+        // Free-form question with no LLM available: stitch a useful answer from live data.
+        const syms = extractSymbols(query);
+        const out: string[] = [`## OMEGA THETA — LOCAL ENGINE READ`];
+        try {
+          const fg = await marketFearGreed();
+          out.push(`**Regime:** fear/greed ${r(fg.score,0)}/100 → ${fg.regime}.`);
+        } catch {}
+        if (syms.length) {
+          out.push(await synthTicker(syms.slice(0, 2), false));
+        } else {
+          out.push(`I couldn't reach the language layer for free-form reasoning right now, so here is a live data slice instead. Ask about a specific ticker (e.g. \`NVDA deep\`), a board (\`top finds\`, \`next big\`, \`news\`, \`private equity\`), or a regime (\`market pulse\`, \`fear greed\`).`);
+        }
+        return out.join("\n\n");
+      }
+    }
+  } catch (e) {
+    return `_Engine error: ${String(e).slice(0,200)}_`;
   }
 }
 
 function synthHelp(): string {
   return [
-    `## OMEGA THETA CORE — DATA-DRIVEN ANALYTICAL ENGINE`,
+    `## OMEGA THETA CORE`,
     ``,
-    `This terminal is **not** an LLM — it's a deterministic probabilistic synthesis engine running on live Yahoo/NASDAQ data + the Oracle 100-formula behavioral state-space. **Prompts are unlimited.**`,
+    `Adaptive cognitive system over a live Yahoo/NASDAQ feed and the Oracle 100-formula behavioral state-space. Ask anything.`,
     ``,
-    `**Try:**`,
+    `**Examples:**`,
     `- \`NVDA\` or \`$TSLA deep\` — full quant + behavioral + Oracle100 synthesis`,
     `- \`market pulse\` / \`fear greed\` / \`snapshot\` — global regime`,
     `- \`top finds\` / \`next big movers\` / \`news\` — live ranked boards`,
     `- \`private equity\` — alt-asset / BDC / PE-ETF hub`,
     `- \`semiconductors\`, \`china\`, \`energy\`, \`biotech\` — region/sector pull`,
     `- \`add NVDA to bag\` / \`simulate TSLA\` / \`switch to PULSE\` — UI control`,
+    `- \`explain reflexivity\` / \`what is Oracle100\` — free-form Q&A`,
   ].join("\n");
 }
 
@@ -373,6 +497,53 @@ function lastUserText(msgs: UIMsg[]): string {
   return "";
 }
 
+// Convert UI message history (last ~8 turns) to OpenAI-style messages.
+function buildHistory(msgs: UIMsg[]): { role: "user" | "assistant"; content: string }[] {
+  return msgs
+    .slice(-8)
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim(),
+    }))
+    .filter((m) => m.content.length > 0);
+}
+
+async function callLLM(
+  history: { role: "user" | "assistant"; content: string }[],
+  packet: string,
+): Promise<string | null> {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) return null;
+  const systemMsg = packet
+    ? `${OMEGA_SYSTEM}\n\n=== CONTEXT PACKET (ground truth — preserve every number/tag) ===\n${packet}\n=== END PACKET ===`
+    : OMEGA_SYSTEM;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Lovable-API-Key": key,
+        "X-Lovable-AIG-SDK": "omega-theta-core",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        temperature: 0.5,
+        messages: [{ role: "system", content: systemMsg }, ...history],
+      }),
+    }).finally(() => clearTimeout(timer));
+    if (!res.ok) return null; // 402 / 429 / 5xx → silent fallback
+    const j: any = await res.json();
+    const out = j?.choices?.[0]?.message?.content;
+    return typeof out === "string" && out.trim().length > 0 ? out.trim() : null;
+  } catch {
+    return null; // timeout / network → silent fallback
+  }
+}
+
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
@@ -384,62 +555,26 @@ export const Route = createFileRoute("/api/chat")({
         if (!query) return Response.json({ text: synthHelp(), ui_action: null });
 
         const intent = detectIntent(query);
-        let text = "";
-        let ui_action: any = null;
+        const history = buildHistory(msgs);
 
-        try {
-          switch (intent.kind) {
-            case "ui_add_bag":
-              ui_action = { ui_action: "add_to_bag", symbol: intent.symbol, thresholdPct: 3 };
-              text = `Pinned **${intent.symbol}** to the Bag. Live alerts armed (≥3% intraday / 52w extremes / vol spike z>2.5).`;
-              break;
-            case "ui_remove_bag":
-              ui_action = { ui_action: "remove_from_bag", symbol: intent.symbol };
-              text = `Removed **${intent.symbol}** from the Bag.`;
-              break;
-            case "ui_simulate":
-              ui_action = { ui_action: "simulate", symbol: intent.symbol };
-              text = `Running Monte Carlo scenario engine for **${intent.symbol}** (drift anchored to Oracle100 S₉₉).`;
-              break;
-            case "ui_open":
-              ui_action = { ui_action: "open_ticker", symbol: intent.symbol };
-              text = `Opening **${intent.symbol}**.`;
-              break;
-            case "ui_switch_tab":
-              ui_action = { ui_action: "switch_tab", tab: intent.tab };
-              text = `Switched to **${intent.tab}**.`;
-              break;
-            case "pulse":           text = await synthPulse(); break;
-            case "fear_greed": {
-              const fg = await marketFearGreed();
-              text = `## FEAR / GREED\n\n**${r(fg.score,0)}/100 → ${fg.regime}**\n\nComponents: ${Object.entries(fg.components).map(([k,v])=>`${k} ${r(v as number,0)}`).join(" · ")}.`;
-              break;
-            }
-            case "snapshot": {
-              const s = await getMarketSnapshot();
-              text = [`## GLOBAL SNAPSHOT`, ...s.map((q:any)=>`- **${q.symbol}** ${r(q.price)} (${pct(q.changePct,2)})${q.shortName ? ` — ${q.shortName}`:""}`)].join("\n");
-              break;
-            }
-            case "top_finds":       text = await synthTopFinds(); break;
-            case "next_big":        text = await synthNextBig(); break;
-            case "news":            text = await synthNews(); break;
-            case "private_equity":  text = await synthPrivateEquity(); break;
-            case "region_sector":   text = await synthRegionSector(intent.group, intent.key); break;
-            case "search":          text = await synthSearch(intent.query); break;
-            case "ticker":          text = await synthTicker(intent.symbols, intent.deep); break;
-            case "help":            text = synthHelp(); break;
-          }
-        } catch (e) {
-          text = `_Engine error: ${String(e).slice(0,200)}_`;
+        // Build context packet from deterministic engine (best-effort, bounded).
+        const packet = await buildContextPacket(query, intent);
+
+        // PRIMARY: real LLM reply, grounded in the packet.
+        const llmText = await callLLM(history, packet);
+
+        if (llmText) {
+          const { text, ui_action } = extractUIAction(llmText);
+          // If the model didn't emit a ui_action but the user clearly asked for one,
+          // honor the intent so the UI still responds.
+          const finalAction = ui_action ?? intentToUIAction(intent);
+          return Response.json({ text, ui_action: finalAction });
         }
 
-        // Wrap deterministic synthesis with AI voice when the gateway is up.
-        // Skip enhancement for UI-action confirmations (already terse) and on errors.
-        const isUIAction = !!ui_action;
-        const shouldEnhance = !isUIAction && !text.startsWith("_Engine error");
-        const finalText = shouldEnhance ? await enhanceWithLLM(query, text) : text;
-
-        return Response.json({ text: finalText, ui_action });
+        // FALLBACK: gateway unavailable → deterministic answer + intent-driven UI action.
+        const text = await deterministicAnswer(query, intent);
+        const ui_action = intentToUIAction(intent);
+        return Response.json({ text, ui_action });
       },
     },
   },
