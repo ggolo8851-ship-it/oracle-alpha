@@ -238,7 +238,7 @@ async function synthPulse(): Promise<string> {
   out.push(`## OMEGA THETA — GLOBAL MARKET PULSE`);
   if (fg) out.push(`**[BEHAVIOR]** Composite fear/greed **${r(fg.score,0)}/100 → ${fg.regime}**. Components: ${Object.entries(fg.components).map(([k,v]) => `${k} ${r(v,0)}`).join(" · ")}.`);
   if (snap?.length) {
-    const named = snap.slice(0, 12).map((q: any) => `${q.symbol} ${r(q.price)} (${pct(q.changePct,2)})`).join(" · ");
+    const named = snap.slice(0, 12).map((q: any) => `${q.symbol} ${r(qPrice(q))} (${pct(qChangePct(q),2)})`).join(" · ");
     out.push(`**[QUANT]** Indices/cross-asset: ${named}.`);
   }
   if (pulse) {
@@ -381,7 +381,7 @@ async function buildContextPacket(query: string, intent: Intent): Promise<string
       }
       case "snapshot": {
         const s = await getMarketSnapshot();
-        sections.push(`### GLOBAL SNAPSHOT\n` + s.slice(0,12).map((q:any)=>`- ${q.symbol} ${r(q.price)} (${pct(q.changePct,2)})${q.shortName ? ` — ${q.shortName}`:""}`).join("\n"));
+        sections.push(`### GLOBAL SNAPSHOT\n` + s.slice(0,12).map((q:any)=>`- ${q.symbol} ${r(qPrice(q))} (${pct(qChangePct(q),2)})${q.shortName ? ` — ${q.shortName}`:""}`).join("\n"));
         break;
       }
       case "top_finds":      sections.push(await synthTopFinds()); break;
@@ -466,7 +466,7 @@ async function deterministicAnswer(query: string, intent: Intent): Promise<strin
       }
       case "snapshot": {
         const s = await getMarketSnapshot();
-        return [`## GLOBAL SNAPSHOT`, ...s.map((q:any)=>`- **${q.symbol}** ${r(q.price)} (${pct(q.changePct,2)})${q.shortName ? ` — ${q.shortName}`:""}`)].join("\n");
+        return [`## GLOBAL SNAPSHOT`, ...s.map((q:any)=>`- **${q.symbol}** ${r(qPrice(q))} (${pct(qChangePct(q),2)})${q.shortName ? ` — ${q.shortName}`:""}`)].join("\n");
       }
       case "top_finds":      return await synthTopFinds();
       case "next_big":       return await synthNextBig();
