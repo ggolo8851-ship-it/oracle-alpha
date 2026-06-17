@@ -283,7 +283,7 @@ async function synthPrivateEquity(): Promise<string> {
   const out = [`## PRIVATE EQUITY / ALT-ASSET HUB`];
   for (const seg of pe.segments) {
     const top = (seg.items || []).slice(0, 5).map((x: any) =>
-      `${x.symbol} ${r(x.price)} (${pct(x.changePct,2)}) score ${r(x.score,2)}`).join(" · ");
+      `${x.symbol} ${r(qPrice(x))} (${pct(qChangePct(x),2)}) score ${r(x.score,2)}`).join(" · ");
     out.push(`**${seg.label}** — ${top}`);
   }
   return out.join("\n\n");
@@ -295,7 +295,7 @@ async function synthRegionSector(group: "region"|"sector", key: string): Promise
   if (!entry) return `Unknown ${group}: ${key}`;
   const q = await getQuotes(entry.symbols).catch(() => []);
   const rows = q.slice(0, 20).map((x: any) =>
-    `- **${x.symbol}** ${r(x.price)} (${pct(x.changePct,2)})${x.shortName ? ` — ${x.shortName}` : ""}`);
+    `- **${x.symbol}** ${r(qPrice(x))} (${pct(qChangePct(x),2)})${x.shortName ? ` — ${x.shortName}` : ""}`);
   return [`## ${entry.label.toUpperCase()} (${group.toUpperCase()})`, ...rows].join("\n");
 }
 
