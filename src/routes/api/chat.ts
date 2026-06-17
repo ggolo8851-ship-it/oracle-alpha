@@ -194,6 +194,13 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       if (oracle) {
         const o = oracle.master;
         parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift prob ${r(oracle.diagnostics.regime_shift,2)} · avalanche risk ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)} vs spot ${r(oracle.diagnostics.P)}.`);
+        // META-STATE (formulas 176–210 + upgrades 1–10): MAD-scrubbed, fat-tail safe.
+        const cleanedCloses = madScrub(closes);
+        const meta = computeMetaState(cleanedCloses, o, {
+          behavioral: beh ? (beh.reflexivity_corr ?? 0) : 0,
+          regimeProbs: [0.35, 0.30, 0.20, 0.15],
+        });
+        parts.push(`**[META Ω*]** A* **${r(meta.A_star,3)}** · Ω* **${r(meta.Omega_star,3)}** · P(up) ${pct(meta.P_up*100,0)} · E[R]₆₀d ${pct(meta.E_R_60d*100,2)} · BC ${r(meta.BC,2)} · DQ ${r(meta.DQ,2)} · CSA ${r(meta.CSA,2)} · RU ${r(meta.RU,2)} · Risk ${r(meta.Risk,2)} · **TradeScore ${r(meta.TradeScore,4)} → ${meta.Action}**. (A* = regime-adj alpha; Ω* = tanh(Ω′ + A* + C + Conf − U); TradeScore = P(up)·E[R]·BC·DQ·CSA·(1−Risk)·Ω*.)`);
       }
       // scenarios
       const drift = oracle ? oracle.master.next_price_drift * 60 : ((m?.hist ?? 0) > 0 ? 0.08 : -0.04);
