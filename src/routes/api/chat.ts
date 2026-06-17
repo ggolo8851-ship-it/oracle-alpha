@@ -554,8 +554,8 @@ async function callLLM(
         "X-Lovable-AIG-SDK": "omega-theta-core",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        temperature: 0.5,
+        model: "google/gemini-3-flash-preview",
+        temperature: 0.6,
         messages: [{ role: "system", content: systemMsg }, ...history],
       }),
     }).finally(() => clearTimeout(timer));
