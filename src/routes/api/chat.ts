@@ -140,6 +140,12 @@ const pct = (n: number | null | undefined, d = 2): string =>
 const logReturnsLocal = (closes: number[]): number[] => {
   const o: number[] = []; for (let i = 1; i < closes.length; i++) if (closes[i-1] > 0 && closes[i] > 0) o.push(Math.log(closes[i]/closes[i-1])); return o;
 };
+// Normalize a Yahoo Quote (which uses regularMarket* fields) to short keys
+// (price/changePct) so downstream renderers always have a real number.
+const qPrice = (q: any): number | null | undefined =>
+  q?.price ?? q?.regularMarketPrice ?? q?.last ?? null;
+const qChangePct = (q: any): number | null | undefined =>
+  q?.changePct ?? q?.regularMarketChangePercent ?? null;
 
 function namedBiases(rsiVal: number | null, distFromHigh: number, distFromLow: number, volZ: number | null): string[] {
   const out: string[] = [];
@@ -232,7 +238,7 @@ async function synthPulse(): Promise<string> {
   out.push(`## OMEGA THETA — GLOBAL MARKET PULSE`);
   if (fg) out.push(`**[BEHAVIOR]** Composite fear/greed **${r(fg.score,0)}/100 → ${fg.regime}**. Components: ${Object.entries(fg.components).map(([k,v]) => `${k} ${r(v,0)}`).join(" · ")}.`);
   if (snap?.length) {
-    const named = snap.slice(0, 12).map((q: any) => `${q.symbol} ${r(q.price)} (${pct(q.changePct,2)})`).join(" · ");
+    const named = snap.slice(0, 12).map((q: any) => `${q.symbol} ${r(qPrice(q))} (${pct(qChangePct(q),2)})`).join(" · ");
     out.push(`**[QUANT]** Indices/cross-asset: ${named}.`);
   }
   if (pulse) {
@@ -277,7 +283,7 @@ async function synthPrivateEquity(): Promise<string> {
   const out = [`## PRIVATE EQUITY / ALT-ASSET HUB`];
   for (const seg of pe.segments) {
     const top = (seg.items || []).slice(0, 5).map((x: any) =>
-      `${x.symbol} ${r(x.price)} (${pct(x.changePct,2)}) score ${r(x.score,2)}`).join(" · ");
+      `${x.symbol} ${r(qPrice(x))} (${pct(qChangePct(x),2)}) score ${r(x.score,2)}`).join(" · ");
     out.push(`**${seg.label}** — ${top}`);
   }
   return out.join("\n\n");
@@ -289,7 +295,7 @@ async function synthRegionSector(group: "region"|"sector", key: string): Promise
   if (!entry) return `Unknown ${group}: ${key}`;
   const q = await getQuotes(entry.symbols).catch(() => []);
   const rows = q.slice(0, 20).map((x: any) =>
-    `- **${x.symbol}** ${r(x.price)} (${pct(x.changePct,2)})${x.shortName ? ` — ${x.shortName}` : ""}`);
+    `- **${x.symbol}** ${r(qPrice(x))} (${pct(qChangePct(x),2)})${x.shortName ? ` — ${x.shortName}` : ""}`);
   return [`## ${entry.label.toUpperCase()} (${group.toUpperCase()})`, ...rows].join("\n");
 }
 
@@ -375,7 +381,7 @@ async function buildContextPacket(query: string, intent: Intent): Promise<string
       }
       case "snapshot": {
         const s = await getMarketSnapshot();
-        sections.push(`### GLOBAL SNAPSHOT\n` + s.slice(0,12).map((q:any)=>`- ${q.symbol} ${r(q.price)} (${pct(q.changePct,2)})${q.shortName ? ` — ${q.shortName}`:""}`).join("\n"));
+        sections.push(`### GLOBAL SNAPSHOT\n` + s.slice(0,12).map((q:any)=>`- ${q.symbol} ${r(qPrice(q))} (${pct(qChangePct(q),2)})${q.shortName ? ` — ${q.shortName}`:""}`).join("\n"));
         break;
       }
       case "top_finds":      sections.push(await synthTopFinds()); break;
@@ -460,7 +466,7 @@ async function deterministicAnswer(query: string, intent: Intent): Promise<strin
       }
       case "snapshot": {
         const s = await getMarketSnapshot();
-        return [`## GLOBAL SNAPSHOT`, ...s.map((q:any)=>`- **${q.symbol}** ${r(q.price)} (${pct(q.changePct,2)})${q.shortName ? ` — ${q.shortName}`:""}`)].join("\n");
+        return [`## GLOBAL SNAPSHOT`, ...s.map((q:any)=>`- **${q.symbol}** ${r(qPrice(q))} (${pct(qChangePct(q),2)})${q.shortName ? ` — ${q.shortName}`:""}`)].join("\n");
       }
       case "top_finds":      return await synthTopFinds();
       case "next_big":       return await synthNextBig();
