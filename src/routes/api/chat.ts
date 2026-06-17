@@ -140,6 +140,12 @@ const pct = (n: number | null | undefined, d = 2): string =>
 const logReturnsLocal = (closes: number[]): number[] => {
   const o: number[] = []; for (let i = 1; i < closes.length; i++) if (closes[i-1] > 0 && closes[i] > 0) o.push(Math.log(closes[i]/closes[i-1])); return o;
 };
+// Normalize a Yahoo Quote (which uses regularMarket* fields) to short keys
+// (price/changePct) so downstream renderers always have a real number.
+const qPrice = (q: any): number | null | undefined =>
+  q?.price ?? q?.regularMarketPrice ?? q?.last ?? null;
+const qChangePct = (q: any): number | null | undefined =>
+  q?.changePct ?? q?.regularMarketChangePercent ?? null;
 
 function namedBiases(rsiVal: number | null, distFromHigh: number, distFromLow: number, volZ: number | null): string[] {
   const out: string[] = [];
