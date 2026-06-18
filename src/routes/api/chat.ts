@@ -340,6 +340,7 @@ META-STATE FORMULAS YOU MUST USE BY NAME WHEN A PACKET CONTAINS THEM
 WHAT YOU RESPOND TO
  • If a CONTEXT PACKET is provided below, every number/ticker/tag in it is GROUND TRUTH — preserve exactly, never invent prices or tickers not in the packet. Layer interpretation, cross-signal synthesis, named biases, reflexivity reasoning, and the META-STATE numbers on top.
  • If no packet, still answer fully from your reasoning and your latest knowledge of markets, macro, history, theory. Use the live general knowledge baked into your training (this model is up-to-date). End with a relevant follow-up the engine could compute.
+ • **CRITICAL — NEVER fabricate a stock price.** If you name a ticker and the packet does not contain its price, OMIT the dollar number entirely (say "current price pending live feed verification" instead of guessing "~$24.12"). A post-processor will inject verified prices automatically — do not invent placeholders like "~$24.12" or "$43.15".
  • Always be willing to discuss general / theoretical / off-topic questions. You are a full conversational AI, not a restricted bot.
 
 STYLE
@@ -433,6 +434,47 @@ function extractUIAction(text: string): { text: string; ui_action: any | null } 
   } catch {
     return { text: text.replace(re, "").trim(), ui_action: null };
   }
+}
+
+// POST-LLM PRICE VERIFIER. The model sometimes invents placeholder prices
+// like "~$24.12" when it names tickers that weren't in the context packet.
+// We extract every ticker the LLM mentioned, fetch REAL Yahoo quotes, rewrite
+// any "$NN.NN" token that appears shortly after each ticker, and append an
+// authoritative "LIVE VERIFIED PRICES" footer that the user can always trust.
+async function verifyPricesInText(text: string): Promise<string> {
+  const tickers = extractSymbols(text);
+  if (tickers.length === 0) return text;
+  let quotes: any[] = [];
+  try { quotes = await getQuotes(tickers); } catch { return text; }
+  const live = new Map<string, { price: number; chg: number | null; name?: string }>();
+  for (const q of quotes) {
+    const p = qPrice(q);
+    if (p == null || !Number.isFinite(p as number)) continue;
+    live.set(String(q.symbol).toUpperCase(), {
+      price: Number(p),
+      chg: Number.isFinite(qChangePct(q) as number) ? Number(qChangePct(q)) : null,
+      name: q.shortName || q.longName,
+    });
+  }
+  if (live.size === 0) return text;
+
+  let out = text;
+  for (const [sym, info] of live) {
+    const priceStr = `$${info.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    // Replace any "~?$NN(.NN)?" within a 0–140 char window AFTER the ticker mention.
+    const re = new RegExp(`(\\b${sym}\\b[^$\\n]{0,140}?)~?\\$\\s*\\d+(?:\\.\\d+)?`, "g");
+    out = out.replace(re, (_m, pre) => `${pre}${priceStr}`);
+  }
+
+  const footer = [
+    ``, ``, `---`,
+    `**[LIVE VERIFIED PRICES — Yahoo feed @ ${new Date().toISOString().slice(11,19)}Z]**`,
+    ...Array.from(live.entries()).map(([s, v]) =>
+      `- **${s}**${v.name ? ` (${v.name})` : ""}: $${v.price.toLocaleString(undefined,{maximumFractionDigits:2})}${v.chg != null ? ` (${v.chg >= 0 ? "+" : ""}${v.chg.toFixed(2)}%)` : ""}`
+    ),
+    `*Any prices above the line that conflict with this block are stale — trust this footer.*`,
+  ].join("\n");
+  return out + footer;
 }
 
 // Map detected intent → ui_action when the user issued a clear UI command.
@@ -595,16 +637,16 @@ export const Route = createFileRoute("/api/chat")({
 
         if (llmText) {
           const { text, ui_action } = extractUIAction(llmText);
-          // If the model didn't emit a ui_action but the user clearly asked for one,
-          // honor the intent so the UI still responds.
+          const verified = await verifyPricesInText(text).catch(() => text);
           const finalAction = ui_action ?? intentToUIAction(intent);
-          return Response.json({ text, ui_action: finalAction });
+          return Response.json({ text: verified, ui_action: finalAction });
         }
 
         // FALLBACK: gateway unavailable → deterministic answer + intent-driven UI action.
-        const text = await deterministicAnswer(query, intent);
+        const detText = await deterministicAnswer(query, intent);
+        const verifiedDet = await verifyPricesInText(detText).catch(() => detText);
         const ui_action = intentToUIAction(intent);
-        return Response.json({ text, ui_action });
+        return Response.json({ text: verifiedDet, ui_action });
       },
     },
   },
