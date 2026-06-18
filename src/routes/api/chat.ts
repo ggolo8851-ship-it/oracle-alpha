@@ -637,16 +637,16 @@ export const Route = createFileRoute("/api/chat")({
 
         if (llmText) {
           const { text, ui_action } = extractUIAction(llmText);
-          // If the model didn't emit a ui_action but the user clearly asked for one,
-          // honor the intent so the UI still responds.
+          const verified = await verifyPricesInText(text).catch(() => text);
           const finalAction = ui_action ?? intentToUIAction(intent);
-          return Response.json({ text, ui_action: finalAction });
+          return Response.json({ text: verified, ui_action: finalAction });
         }
 
         // FALLBACK: gateway unavailable → deterministic answer + intent-driven UI action.
-        const text = await deterministicAnswer(query, intent);
+        const detText = await deterministicAnswer(query, intent);
+        const verifiedDet = await verifyPricesInText(detText).catch(() => detText);
         const ui_action = intentToUIAction(intent);
-        return Response.json({ text, ui_action });
+        return Response.json({ text: verifiedDet, ui_action });
       },
     },
   },
