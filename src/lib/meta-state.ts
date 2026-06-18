@@ -217,7 +217,7 @@ export function computeMetaState(closes: number[], oracle: {
   );
 
   const action: "BUY" | "SHORT" | "HOLD" =
-    Math.abs(ts) < 0.0002 ? "HOLD" : directionalEdge > 0.12 ? "BUY" : directionalEdge < -0.12 ? "SHORT" : "HOLD";
+    ts > 0.0002 ? "BUY" : ts < -0.0002 ? "SHORT" : "HOLD";
 
   return {
     A_star: round(aStar, 3),
