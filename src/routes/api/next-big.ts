@@ -30,18 +30,29 @@ type Mover = {
 let CACHE: { ts: number; data: any } | null = null;
 const TTL = 5 * 60 * 1000;
 
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 async function compute() {
   const symbols = MICRO_SMALL_MID;
   const quotes = await getQuotes(symbols);
   const qMap = new Map<string, Quote>(quotes.map((q) => [q.symbol, q]));
 
-  const CONC = 6;
+  const CONC = 10;
+  const deadline = Date.now() + 9_000;
   const hist = new Map<string, Awaited<ReturnType<typeof getHistory>>>();
   let i = 0;
   await Promise.all(Array.from({ length: CONC }, async () => {
-    while (i < symbols.length) {
+    while (i < symbols.length && Date.now() < deadline) {
       const s = symbols[i++];
-      try { hist.set(s, await getHistory(s, "6mo", "1d")); } catch {}
+      try {
+        const bars = await withTimeout(getHistory(s, "6mo", "1d"), 1_800, []);
+        if (bars.length) hist.set(s, bars);
+      } catch {}
     }
   }));
 
@@ -49,8 +60,12 @@ async function compute() {
   for (const sym of symbols) {
     const bars = hist.get(sym);
     if (!bars || bars.length < 30) continue;
-    const closes = extractCloses(bars);
-    const vols = extractVolumes(bars);
+    const q = qMap.get(sym);
+    const adjustedBars = q?.regularMarketPrice
+      ? bars.map((b, idx) => idx === bars.length - 1 ? { ...b, c: q.regularMarketPrice!, h: Math.max(b.h ?? q.regularMarketPrice!, q.regularMarketPrice!), l: Math.min(b.l ?? q.regularMarketPrice!, q.regularMarketPrice!), v: q.regularMarketVolume ?? b.v } : b)
+      : bars;
+    const closes = extractCloses(adjustedBars);
+    const vols = extractVolumes(adjustedBars);
     if (closes.length < 30 || vols.length < 30) continue;
     const last = closes[closes.length - 1];
 
@@ -87,7 +102,9 @@ async function compute() {
 
     // Anomaly composite — volume thrust + acceleration + RV regime + breakout structure
     const anomaly = clamp(
-      Math.abs(volZ) * 12 + Math.abs(accel) * 1.5 + Math.abs(from52H) < 4 ? 25 : 0 +
+      Math.abs(volZ) * 12 +
+      Math.abs(accel) * 1.5 +
+      (Math.abs(from52H) < 4 ? 25 : 0) +
       (compression > 1.4 ? 15 : 0),
       0, 100,
     );
@@ -114,7 +131,7 @@ async function compute() {
     if (compression < 0.7) signals.push("VOL_COMPRESSION_COIL");
     if (rsi14 > 75) signals.push("OVERBOUGHT");
     if (rsi14 < 25) signals.push("OVERSOLD");
-    if (volThrust > 2 && ret1 > 2) signals.push("INSTITUTIONAL_ACCUMULATION");
+    if (volThrust > 2 && ret1 > 2) signals.push("PUBLIC_VOLUME_ACCUMULATION");
 
     const timeframe: Mover["timeframe"] =
       signals.includes("VOL_COMPRESSION_COIL") ? "2-6W" :
@@ -124,7 +141,6 @@ async function compute() {
     const catalyst = buildCatalyst(signals, ret5, ret20, volZ, from52H);
     const why = buildWhy(signals, anomaly, accel, volZ);
 
-    const q = qMap.get(sym);
     movers.push({
       rank: 0,
       symbol: sym,
@@ -151,7 +167,7 @@ async function compute() {
 function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)); }
 
 function buildCatalyst(s: string[], r5: number, r20: number, vz: number, fH: number): string {
-  if (s.includes("INSTITUTIONAL_ACCUMULATION")) return `Heavy block volume on up move (vol z=${vz.toFixed(1)}σ) suggests institutional bid.`;
+  if (s.includes("PUBLIC_VOLUME_ACCUMULATION")) return `Public volume thrust on an up move (vol z=${vz.toFixed(1)}σ); accumulation proxy, not dark-pool proof.`;
   if (s.includes("52W_HIGH_TEST")) return `Pressing 52w high; bull-flag continuation setup if volume confirms.`;
   if (s.includes("VOL_COMPRESSION_COIL")) return `Bollinger compression — energy stored, awaiting directional break.`;
   if (s.includes("MOMENTUM_ACCEL")) return `5d return ${r5.toFixed(1)}% running hot vs 20d ${r20.toFixed(1)}% — trend acceleration.`;

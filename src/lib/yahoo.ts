@@ -109,22 +109,87 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
   }
 }
 
+function normalizeQuote(q: any, fallbackSymbol?: string): Quote | null {
+  const symbol = String(q?.symbol ?? fallbackSymbol ?? "").toUpperCase();
+  const price = q?.regularMarketPrice ?? q?.postMarketPrice ?? q?.preMarketPrice;
+  if (!symbol || typeof price !== "number" || !Number.isFinite(price) || price <= 0) return null;
+  return {
+    symbol,
+    shortName: q.shortName,
+    longName: q.longName,
+    regularMarketPrice: price,
+    regularMarketChange: q.regularMarketChange,
+    regularMarketChangePercent: q.regularMarketChangePercent,
+    regularMarketVolume: q.regularMarketVolume,
+    regularMarketDayHigh: q.regularMarketDayHigh,
+    regularMarketDayLow: q.regularMarketDayLow,
+    marketCap: q.marketCap,
+    trailingPE: q.trailingPE,
+    forwardPE: q.forwardPE,
+    fiftyTwoWeekHigh: q.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow: q.fiftyTwoWeekLow,
+    averageVolume: q.averageDailyVolume3Month ?? q.averageVolume,
+    currency: q.currency,
+    exchange: q.fullExchangeName ?? q.exchange,
+  };
+}
+
+async function fetchQuoteBatch(symbols: string[]): Promise<Quote[]> {
+  const cleanSymbols = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+  if (!cleanSymbols.length) return [];
+  const fresh: Quote[] = [];
+  const missing: string[] = [];
+  for (const sym of cleanSymbols) {
+    const hit = cacheGet<Quote | null>(`quote:${sym}`);
+    if (hit !== undefined) {
+      if (hit) fresh.push(hit);
+    } else {
+      missing.push(sym);
+    }
+  }
+  for (let i = 0; i < missing.length; i += 20) {
+    const chunk = missing.slice(i, i + 20);
+    const path = `/v7/finance/quote?symbols=${encodeURIComponent(chunk.join(","))}`;
+    const r = await yfetch(path, { tries: 2 });
+    const seen = new Set<string>();
+    if (r?.ok) {
+      const j = (await r.json()) as any;
+      for (const raw of j?.quoteResponse?.result ?? []) {
+        const q = normalizeQuote(raw);
+        if (!q) continue;
+        seen.add(q.symbol);
+        cacheSet(`quote:${q.symbol}`, q, 20_000);
+        cacheSet(`meta:${q.symbol}`, q, 20_000);
+        fresh.push(q);
+      }
+    }
+    for (const sym of chunk) if (!seen.has(sym)) cacheSet(`quote:${sym}`, null, 8_000);
+  }
+  const bySym = new Map(fresh.map((q) => [q.symbol, q]));
+  return cleanSymbols.map((s) => bySym.get(s)).filter((q): q is Quote => Boolean(q));
+}
+
 export async function getQuotes(symbols: string[]): Promise<Quote[]> {
   if (!symbols.length) return [];
-  const out: Quote[] = [];
-  // Lower concurrency to reduce 429 pressure on Yahoo.
+  const unique = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+  const batch = await fetchQuoteBatch(unique).catch(() => []);
+  const bySym = new Map(batch.map((q) => [q.symbol, q]));
+  const missing = unique.filter((s) => !bySym.has(s));
+  const out: Quote[] = [...batch];
+  // Lower concurrency to reduce 429 pressure on Yahoo fallback.
   const CONC = 4;
   let i = 0;
   await Promise.all(
-    Array.from({ length: Math.min(CONC, symbols.length) }, async () => {
-      while (i < symbols.length) {
+    Array.from({ length: Math.min(CONC, missing.length) }, async () => {
+      while (i < missing.length) {
         const idx = i++;
-        const q = await fetchChartMeta(symbols[idx]);
+        const q = await fetchChartMeta(missing[idx]);
         if (q) out.push(q);
       }
     }),
   );
-  return out;
+  const finalMap = new Map(out.map((q) => [q.symbol, q]));
+  return unique.map((s) => finalMap.get(s)).filter((q): q is Quote => Boolean(q));
 }
 
 export type Bar = { t: number; o: number|null; h: number|null; l: number|null; c: number|null; v: number|null };

@@ -40,21 +40,30 @@ type Find = {
 let CACHE: { ts: number; data: any } | null = null;
 const TTL_MS = 5 * 60 * 1000;
 
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 async function compute(): Promise<{ generated_at: string; finds: Find[]; universe_size: number }> {
   const symbols = Array.from(new Set([...UNIVERSE, BENCH]));
   const quotes = await getQuotes(symbols);
   const qMap = new Map<string, Quote>(quotes.map((q) => [q.symbol, q]));
 
   // Pull 6mo history for each (concurrency-limited).
-  const CONC = 6;
+  const CONC = 10;
+  const deadline = Date.now() + 9_000;
   const hist = new Map<string, Awaited<ReturnType<typeof getHistory>>>();
   let i = 0;
   await Promise.all(
     Array.from({ length: CONC }, async () => {
-      while (i < symbols.length) {
+      while (i < symbols.length && Date.now() < deadline) {
         const sym = symbols[i++];
         try {
-          hist.set(sym, await getHistory(sym, "6mo", "1d"));
+          const bars = await withTimeout(getHistory(sym, "6mo", "1d"), 1_800, []);
+          if (bars.length) hist.set(sym, bars);
         } catch {}
       }
     }),
@@ -71,7 +80,11 @@ async function compute(): Promise<{ generated_at: string; finds: Find[]; univers
   for (const sym of UNIVERSE) {
     const bars = hist.get(sym);
     if (!bars || bars.length < 30) continue;
-    const closes = extractCloses(bars);
+    const q = qMap.get(sym);
+    const adjustedBars = q?.regularMarketPrice
+      ? bars.map((b, idx) => idx === bars.length - 1 ? { ...b, c: q.regularMarketPrice!, h: Math.max(b.h ?? q.regularMarketPrice!, q.regularMarketPrice!), l: Math.min(b.l ?? q.regularMarketPrice!, q.regularMarketPrice!), v: q.regularMarketVolume ?? b.v } : b)
+      : bars;
+    const closes = extractCloses(adjustedBars);
     const vols = extractVolumes(bars);
     if (closes.length < 30) continue;
     const last = closes[closes.length - 1];
@@ -121,7 +134,6 @@ async function compute(): Promise<{ generated_at: string; finds: Find[]; univers
     else if ((ret20 ?? 0) > 5 && above50 > 0) signal = "MOMENTUM";
     else if ((rsi14 ?? 50) > 75) signal = "OVEREXTENDED";
 
-    const q = qMap.get(sym);
     scored.push({
       rank: 0,
       symbol: sym,

@@ -146,6 +146,46 @@ const qPrice = (q: any): number | null | undefined =>
   q?.price ?? q?.regularMarketPrice ?? q?.last ?? null;
 const qChangePct = (q: any): number | null | undefined =>
   q?.changePct ?? q?.regularMarketChangePercent ?? null;
+const quoteSymbol = (q: any): string => String(q?.symbol ?? "").toUpperCase();
+const asFinite = (n: unknown): number | null =>
+  typeof n === "number" && Number.isFinite(n) ? n : null;
+
+async function fetchLiveQuoteMap(symbols: string[]): Promise<Map<string, any>> {
+  const unique = Array.from(new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))).slice(0, 12);
+  const quotes = await getQuotes(unique).catch(() => []);
+  const map = new Map<string, any>();
+  for (const q of quotes) {
+    const sym = quoteSymbol(q);
+    const price = asFinite(qPrice(q));
+    if (!sym || price == null || price <= 0) continue;
+    map.set(sym, q);
+  }
+  return map;
+}
+
+function mergeLivePriceIntoBars(bars: Awaited<ReturnType<typeof getHistory>>, quote: any) {
+  const live = asFinite(qPrice(quote));
+  if (live == null || live <= 0 || bars.length === 0) return bars;
+  const out = bars.slice();
+  const lastBar = out[out.length - 1];
+  const lastClose = asFinite(lastBar.c);
+  if (lastClose == null) return out;
+  const relGap = Math.abs(live / lastClose - 1);
+  if (relGap < 0.0005) return out;
+  out[out.length - 1] = {
+    ...lastBar,
+    c: live,
+    h: Math.max(asFinite(lastBar.h) ?? live, live),
+    l: Math.min(asFinite(lastBar.l) ?? live, live),
+    v: asFinite(quote?.regularMarketVolume) ?? lastBar.v,
+  };
+  return out;
+}
+
+function evidenceNote(signals: string[]): string {
+  if (!signals.length) return "no confirmed live signal";
+  return signals.join(" · ");
+}
 
 function namedBiases(rsiVal: number | null, distFromHigh: number, distFromLow: number, volZ: number | null): string[] {
   const out: string[] = [];
@@ -162,12 +202,20 @@ function namedBiases(rsiVal: number | null, distFromHigh: number, distFromLow: n
 
 async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
   const blocks: string[] = [];
+  const liveQuoteMap = await fetchLiveQuoteMap(symbols);
   for (const sym of symbols) {
+    const liveQuote = liveQuoteMap.get(sym.toUpperCase());
+    const livePrice = asFinite(qPrice(liveQuote));
     try {
-      const bars = await getHistory(sym, "1y", "1d");
+      const bars = mergeLivePriceIntoBars(await getHistory(sym, "1y", "1d"), liveQuote);
       const closes = extractCloses(bars);
       const vols = extractVolumes(bars);
-      if (closes.length < 30) { blocks.push(`### ${sym}\nInsufficient history.`); continue; }
+      if (closes.length < 30) {
+        blocks.push(livePrice != null
+          ? `### ${sym}\n**Current verified price:** **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}. Insufficient Yahoo history for indicators.`
+          : `### ${sym}\nInsufficient Yahoo history / live quote unavailable.`);
+        continue;
+      }
       const last = closes[closes.length - 1];
       const first = closes[0];
       const m = macd(closes); const bb = bollinger(closes, 20, 2); const dd = maxDrawdown(closes);
@@ -176,7 +224,7 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const annVol = stdev(logReturnsLocal(closes)) * Math.sqrt(252) * 100;
       const vol20 = vols.length > 20 ? mean(vols.slice(-20)) : null;
       const volZ = vol20 ? (vols[vols.length - 1] - vol20) / (stdev(vols.slice(-20)) || 1) : null;
-      const Pmax = Math.max(...closes); const Pmin = Math.min(...closes);
+      const Pmax = asFinite(liveQuote?.fiftyTwoWeekHigh) ?? Math.max(...closes); const Pmin = asFinite(liveQuote?.fiftyTwoWeekLow) ?? Math.min(...closes);
       const distHigh = (last / Pmax - 1) * 100; const distLow = (last / Pmin - 1) * 100;
       const regime = sma200v ? (last > sma200v ? "BULL" : "BEAR") : "UNKNOWN";
 
@@ -188,40 +236,59 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
                        : (sma50v && last < sma50v && (m?.hist ?? 0) < 0) ? "deteriorating" : "mixed";
 
       const parts: string[] = [];
-      parts.push(`### ${sym} — ${thesisDir.toUpperCase()} (${regime} regime)`);
-      parts.push(`**Thesis:** ${sym} prints **$${r(last)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
+      parts.push(`### ${sym}${liveQuote?.shortName ? ` (${liveQuote.shortName})` : ""} — ${thesisDir.toUpperCase()} (${regime} regime)`);
+      if (livePrice != null) {
+        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}. This line is the authoritative spot used for every calculation below.`);
+        parts.push(`**Thesis:** ${sym} prints **$${r(livePrice)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
+      } else {
+        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current quote unavailable from Yahoo right now; no current dollar price is being printed.`);
+        parts.push(`**Thesis:** Indicator stack uses the latest available Yahoo daily bar with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
+      }
       parts.push("");
       parts.push(`**[QUANT]** TR ${pct((last/first-1)*100,1)} (1y) · ROC10 ${pct(roc(closes,10),1)} · ROC30 ${pct(roc(closes,30),1)} · ROC90 ${pct(roc(closes,90),1)} · MACD ${m ? `${r(m.macd,3)}/${r(m.signal,3)} (hist ${r(m.hist,3)})` : "—"} · Sharpe ${r(sharpe(closes),2)} · Sortino ${r(sortino(closes),2)} · Calmar ${r(calmar(closes),2)} · MDD ${dd ? pct(dd.dd_pct,1) : "—"} over ${dd?.duration ?? "—"}d.`);
       parts.push(`**[TECH]** SMA20 ${r(sma20v)} · SMA50 ${r(sma50v)} · SMA200 ${r(sma200v)} · price vs SMA200 ${pct(sma200v ? (last/sma200v-1)*100 : null,1)} · Bollinger %B ${bb ? r(bb.pctB,2) : "—"} · ATR14 ${r(atr(bars,14),2)} · realized vol 20d ${pct(stdev(logReturnsLocal(closes.slice(-20)))*Math.sqrt(252)*100,1)}.`);
-      parts.push(`**[MICROSTRUCTURE]** last vol ${r(vols[vols.length-1],0)} vs 20d avg ${r(vol20,0)} · volume z-score **${r(volZ,2)}** · $ vol today ≈ $${r((vols[vols.length-1]||0)*last,0)}.`);
+      parts.push(livePrice != null
+        ? `**[MICROSTRUCTURE]** last vol ${r(vols[vols.length-1],0)} vs 20d avg ${r(vol20,0)} · volume z-score **${r(volZ,2)}** · $ vol today ≈ $${r((vols[vols.length-1]||0)*last,0)}.`
+        : `**[MICROSTRUCTURE]** last vol ${r(vols[vols.length-1],0)} vs 20d avg ${r(vol20,0)} · volume z-score **${r(volZ,2)}**. Dollar-volume estimate paused until live quote returns.`);
       if (beh) {
         parts.push(`**[BEHAVIOR]** anchoring distance from 52w high **${pct(distHigh,1)}** / low **${pct(distLow,1)}** · reflexivity (px/vol corr) **${r(beh.reflexivity_corr,2)}** · crowding **${r(beh.crowding_score,2)}** · recency-z **${r(beh.recency_z,2)}**. Active biases: ${biases.join(", ")}. Reflexive loop: price → narrative (volume z=${r(volZ,2)}) → flow → price.`);
       }
       if (oracle) {
         const o = oracle.master;
-        parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift prob ${r(oracle.diagnostics.regime_shift,2)} · avalanche risk ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)} vs spot ${r(oracle.diagnostics.P)}.`);
+        parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift prob ${r(oracle.diagnostics.regime_shift,2)} · avalanche risk ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)}${livePrice != null ? ` vs verified spot ${r(last)}` : " (latest daily-history basis)"}.`);
         // META-STATE (formulas 176–210 + upgrades 1–10): MAD-scrubbed, fat-tail safe.
         const cleanedCloses = madScrub(closes);
         const meta = computeMetaState(cleanedCloses, o, {
           behavioral: beh ? (beh.reflexivity_corr ?? 0) : 0,
           regimeProbs: [0.35, 0.30, 0.20, 0.15],
         });
-        parts.push(`**[META Ω*]** A* **${r(meta.A_star,3)}** · Ω* **${r(meta.Omega_star,3)}** · P(up) ${pct(meta.P_up*100,0)} · E[R]₆₀d ${pct(meta.E_R_60d*100,2)} · BC ${r(meta.BC,2)} · DQ ${r(meta.DQ,2)} · CSA ${r(meta.CSA,2)} · RU ${r(meta.RU,2)} · Risk ${r(meta.Risk,2)} · **TradeScore ${r(meta.TradeScore,4)} → ${meta.Action}**. (A* = regime-adj alpha; Ω* = tanh(Ω′ + A* + C + Conf − U); TradeScore = P(up)·E[R]·BC·DQ·CSA·(1−Risk)·Ω*.)`);
+        parts.push(`**[META Ω*]** A* **${r(meta.A_star,3)}** · Ω* **${r(meta.Omega_star,3)}** · P(up) ${pct(meta.P_up*100,0)} · E[R]₆₀d ${pct(meta.E_R_60d*100,2)} · BC ${r(meta.BC,2)} · DQ ${r(meta.DQ,2)} · CSA ${r(meta.CSA,2)} · RU ${r(meta.RU,2)} · Risk ${r(meta.Risk,2)} · edge ${r((meta as any).DirectionalEdge,3)} · **TradeScore ${r(meta.TradeScore,4)} → ${meta.Action}**. (A* = regime-adj alpha; Ω* = tanh(Ω′ + A* + C + Conf − U); TradeScore = P(up)·E[R]·BC·DQ·CSA·(1−Risk)·Ω*.)`);
       }
       // scenarios
-      const drift = oracle ? oracle.master.next_price_drift * 60 : ((m?.hist ?? 0) > 0 ? 0.08 : -0.04);
-      const upTarget = last * Math.exp(drift + annVol/100 * 0.4);
-      const dnTarget = last * Math.exp(drift - annVol/100 * 0.6);
+      const recentRets = logReturnsLocal(closes).slice(-90);
+      const dailyVol = stdev(recentRets);
+      const dailyMean = mean(recentRets.slice(-60));
+      const rawDrift = oracle ? dailyMean * 60 + oracle.master.next_price_drift * Math.sqrt(60) * 0.35 : ((m?.hist ?? 0) > 0 ? dailyMean * 60 + 0.03 : dailyMean * 60 - 0.02);
+      const driftCap = Math.min(0.35, Math.max(0.06, dailyVol * Math.sqrt(60) * 0.75 + 0.06));
+      const drift = Math.max(-driftCap, Math.min(driftCap, rawDrift));
+      const horizonVol = dailyVol * Math.sqrt(60);
+      const upTarget = last * Math.exp(drift + horizonVol * 0.7);
+      const dnTarget = last * Math.exp(drift - horizonVol * 0.9);
       const baseTarget = last * Math.exp(drift);
-      const pUp = Math.max(0.05, Math.min(0.85, 0.5 + (oracle?.master.final_signal ?? 0) * 0.3 + (rsi14 != null ? (50-rsi14)/200 : 0)));
+      const trendScore = (sma50v ? (last > sma50v ? 1 : -1) : 0) * 0.5 + ((m?.hist ?? 0) > 0 ? 0.5 : -0.5);
+      const pUp = Math.max(0.1, Math.min(0.8, 0.5 + (oracle?.master.final_signal ?? 0) * 0.22 + Math.tanh(drift * 4) * 0.12 + trendScore * 0.07));
       const pDn = Math.max(0.05, Math.min(0.6, 1 - pUp - 0.25));
       const pBase = Math.max(0.05, 1 - pUp - pDn);
-      parts.push(`**[SCENARIOS — 60d horizon]** Bull ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear ~$${r(dnTarget)} (${pct(pDn*100,0)}). Probabilities are heuristic, not certainties — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`);
+      parts.push(livePrice != null
+        ? `**[SCENARIOS — 60d horizon]** Bull ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear ~$${r(dnTarget)} (${pct(pDn*100,0)}). Probabilities are heuristic, not certainties — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`
+        : `**[SCENARIOS — 60d horizon]** Dollar targets paused because Yahoo live quote is unavailable. Directional probabilities only: Bull ${pct(pUp*100,0)} · Base ${pct(pBase*100,0)} · Bear ${pct(pDn*100,0)}.`);
       parts.push(`**[RISK GEOMETRY]** ann. vol ${pct(annVol,1)} · downside dev ${pct(downsideDeviation(closes),1)} · MDD ${dd ? pct(dd.dd_pct,1) : "—"} · regime ${regime}. Fragility ${rsi14 != null && rsi14 > 70 ? "elevated (overbought)" : rsi14 != null && rsi14 < 30 ? "elevated (oversold cascade)" : "moderate"}.`);
       parts.push(`**[ASYMMETRY]** Reward/risk ~ ${r((upTarget-last)/Math.max(last-dnTarget,0.01),2)}× with current setup. ${distHigh > -3 ? "Near 52w high — breakout vs. exhaustion choice." : distLow < 5 ? "Near 52w low — capitulation vs. continuation choice." : "Mid-range — momentum-driven."}.`);
       blocks.push(parts.join("\n"));
     } catch (e) {
-      blocks.push(`### ${sym}\n_Could not fetch — ${String(e).slice(0,140)}._`);
+      blocks.push(livePrice != null
+        ? `### ${sym}${liveQuote?.shortName ? ` (${liveQuote.shortName})` : ""}\n**[LIVE VERIFIED — Yahoo Finance]** Current price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}.\n\nHistorical indicator stack unavailable right now (${String(e).slice(0,120)}), so Oracle is not producing RSI/MACD/scenarios for this symbol until Yahoo history is available.`
+        : `### ${sym}\n_Could not fetch live quote or history — ${String(e).slice(0,140)}._`);
     }
   }
   blocks.push(`\n---\n*Not investment advice. Synthesis from Yahoo/NASDAQ feed + Oracle100 behavioral state-space. No LLM call on this path — pure data + math.*`);
@@ -254,7 +321,7 @@ async function synthTopFinds(): Promise<string> {
   const tf: any = await getTopFindsCached().catch(() => null);
   if (!tf?.finds?.length) return "Top finds engine returned no rankings.";
   const rows = tf.finds.slice(0, 10).map((f: any, i: number) =>
-    `${i+1}. **${f.symbol}** — score ${r(f.composite,2)} · ${pct(f.change_pct,2)} · RSI ${r(f.rsi,1)} · vol z ${r(f.vol_z,2)} — ${f.thesis || ""}`
+    `${i+1}. **${f.symbol}** — $${r(f.price)} · score ${r(f.score,1)} · ${pct(f.change_pct,2)} · RSI ${r(f.rsi14,0)} · RS vs SPY ${pct(f.rs_vs_spy,1)} · ${f.signal || "MIXED"}`
   );
   return [`## TOP FINDS — LIVE RANKED BOARD`, ...rows, "\n*Composite = momentum × trend × rel-strength × vol thrust × quality. Pure data.*"].join("\n");
 }
@@ -263,7 +330,7 @@ async function synthNextBig(): Promise<string> {
   const nb: any = await getNextBigCached().catch(() => null);
   if (!nb?.movers?.length) return "Next-big scanner returned no candidates.";
   const rows = nb.movers.slice(0, 12).map((f: any, i: number) =>
-    `${i+1}. **${f.symbol}** — anomaly ${r(f.anomaly_score,2)} · P(bull) ${pct((f.bull_prob||0)*100,0)} · vol z ${r(f.vol_z,2)} — ${f.catalyst || f.thesis || ""}`
+    `${i+1}. **${f.symbol}** — $${r(f.price)} · anomaly ${r(f.anomaly_score,0)} · confidence ${r(f.confidence,0)} · P(bull) ${pct(f.bull_prob,0)} · ${evidenceNote(f.signals || [])} — ${f.catalyst || f.thesis || ""}`
   );
   return [`## NEXT BIG MOVERS — MICRO/SMALL/MID-CAP SCANNER`, ...rows].join("\n");
 }
@@ -490,6 +557,13 @@ function intentToUIAction(intent: Intent): any | null {
   }
 }
 
+function requiresDeterministicMarketData(intent: Intent): boolean {
+  return [
+    "ticker", "snapshot", "top_finds", "next_big", "region_sector",
+    "fear_greed", "pulse", "private_equity",
+  ].includes(intent.kind);
+}
+
 // Deterministic answer used when LLM is unreachable. Always returns SOMETHING
 // — never a help dump for free-form questions.
 async function deterministicAnswer(query: string, intent: Intent): Promise<string> {
@@ -628,6 +702,15 @@ export const Route = createFileRoute("/api/chat")({
 
         const intent = detectIntent(query);
         const history = buildHistory(msgs);
+
+        // Any stock/price/ranking request must stay deterministic so the engine
+        // cannot hallucinate prices, hidden liquidity, dark-pool claims, or bogus math.
+        if (extractSymbols(query).length > 0 || requiresDeterministicMarketData(intent)) {
+          const detText = await deterministicAnswer(query, intent);
+          const verifiedDet = await verifyPricesInText(detText).catch(() => detText);
+          const ui_action = intentToUIAction(intent);
+          return Response.json({ text: verifiedDet, ui_action });
+        }
 
         // Build context packet from deterministic engine (best-effort, bounded).
         const packet = await buildContextPacket(query, intent);
