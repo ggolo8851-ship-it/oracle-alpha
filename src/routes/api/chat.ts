@@ -255,7 +255,7 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       }
       if (oracle) {
         const o = oracle.master;
-        parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift prob ${r(oracle.diagnostics.regime_shift,2)} · avalanche risk ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)} vs spot ${r(oracle.diagnostics.P)}.`);
+        parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift prob ${r(oracle.diagnostics.regime_shift,2)} · avalanche risk ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)}${livePrice != null ? ` vs verified spot ${r(last)}` : " (latest daily-history basis)"}.`);
         // META-STATE (formulas 176–210 + upgrades 1–10): MAD-scrubbed, fat-tail safe.
         const cleanedCloses = madScrub(closes);
         const meta = computeMetaState(cleanedCloses, o, {
@@ -279,7 +279,9 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const pUp = Math.max(0.1, Math.min(0.8, 0.5 + (oracle?.master.final_signal ?? 0) * 0.22 + Math.tanh(drift * 4) * 0.12 + trendScore * 0.07));
       const pDn = Math.max(0.05, Math.min(0.6, 1 - pUp - 0.25));
       const pBase = Math.max(0.05, 1 - pUp - pDn);
-      parts.push(`**[SCENARIOS — 60d horizon]** Bull ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear ~$${r(dnTarget)} (${pct(pDn*100,0)}). Probabilities are heuristic, not certainties — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`);
+      parts.push(livePrice != null
+        ? `**[SCENARIOS — 60d horizon]** Bull ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear ~$${r(dnTarget)} (${pct(pDn*100,0)}). Probabilities are heuristic, not certainties — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`
+        : `**[SCENARIOS — 60d horizon]** Dollar targets paused because Yahoo live quote is unavailable. Directional probabilities only: Bull ${pct(pUp*100,0)} · Base ${pct(pBase*100,0)} · Bear ${pct(pDn*100,0)}.`);
       parts.push(`**[RISK GEOMETRY]** ann. vol ${pct(annVol,1)} · downside dev ${pct(downsideDeviation(closes),1)} · MDD ${dd ? pct(dd.dd_pct,1) : "—"} · regime ${regime}. Fragility ${rsi14 != null && rsi14 > 70 ? "elevated (overbought)" : rsi14 != null && rsi14 < 30 ? "elevated (oversold cascade)" : "moderate"}.`);
       parts.push(`**[ASYMMETRY]** Reward/risk ~ ${r((upTarget-last)/Math.max(last-dnTarget,0.01),2)}× with current setup. ${distHigh > -3 ? "Near 52w high — breakout vs. exhaustion choice." : distLow < 5 ? "Near 52w low — capitulation vs. continuation choice." : "Mid-range — momentum-driven."}.`);
       blocks.push(parts.join("\n"));
