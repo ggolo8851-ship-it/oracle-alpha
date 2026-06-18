@@ -435,6 +435,47 @@ function extractUIAction(text: string): { text: string; ui_action: any | null } 
   }
 }
 
+// POST-LLM PRICE VERIFIER. The model sometimes invents placeholder prices
+// like "~$24.12" when it names tickers that weren't in the context packet.
+// We extract every ticker the LLM mentioned, fetch REAL Yahoo quotes, rewrite
+// any "$NN.NN" token that appears shortly after each ticker, and append an
+// authoritative "LIVE VERIFIED PRICES" footer that the user can always trust.
+async function verifyPricesInText(text: string): Promise<string> {
+  const tickers = extractSymbols(text);
+  if (tickers.length === 0) return text;
+  let quotes: any[] = [];
+  try { quotes = await getQuotes(tickers); } catch { return text; }
+  const live = new Map<string, { price: number; chg: number | null; name?: string }>();
+  for (const q of quotes) {
+    const p = qPrice(q);
+    if (p == null || !Number.isFinite(p as number)) continue;
+    live.set(String(q.symbol).toUpperCase(), {
+      price: Number(p),
+      chg: Number.isFinite(qChangePct(q) as number) ? Number(qChangePct(q)) : null,
+      name: q.shortName || q.longName,
+    });
+  }
+  if (live.size === 0) return text;
+
+  let out = text;
+  for (const [sym, info] of live) {
+    const priceStr = `$${info.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    // Replace any "~?$NN(.NN)?" within a 0–140 char window AFTER the ticker mention.
+    const re = new RegExp(`(\\b${sym}\\b[^$\\n]{0,140}?)~?\\$\\s*\\d+(?:\\.\\d+)?`, "g");
+    out = out.replace(re, (_m, pre) => `${pre}${priceStr}`);
+  }
+
+  const footer = [
+    ``, ``, `---`,
+    `**[LIVE VERIFIED PRICES — Yahoo feed @ ${new Date().toISOString().slice(11,19)}Z]**`,
+    ...Array.from(live.entries()).map(([s, v]) =>
+      `- **${s}**${v.name ? ` (${v.name})` : ""}: $${v.price.toLocaleString(undefined,{maximumFractionDigits:2})}${v.chg != null ? ` (${v.chg >= 0 ? "+" : ""}${v.chg.toFixed(2)}%)` : ""}`
+    ),
+    `*Any prices above the line that conflict with this block are stale — trust this footer.*`,
+  ].join("\n");
+  return out + footer;
+}
+
 // Map detected intent → ui_action when the user issued a clear UI command.
 // Used by the fallback path (no LLM) so UI control keeps working offline.
 function intentToUIAction(intent: Intent): any | null {
