@@ -242,12 +242,14 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
         parts.push(`**Thesis:** ${sym} prints **$${r(livePrice)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
       } else {
         parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current quote unavailable from Yahoo right now; no current dollar price is being printed.`);
-        parts.push(`**Thesis:** Latest Yahoo daily bar is **$${r(last)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
+        parts.push(`**Thesis:** Indicator stack uses the latest available Yahoo daily bar with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
       }
       parts.push("");
       parts.push(`**[QUANT]** TR ${pct((last/first-1)*100,1)} (1y) · ROC10 ${pct(roc(closes,10),1)} · ROC30 ${pct(roc(closes,30),1)} · ROC90 ${pct(roc(closes,90),1)} · MACD ${m ? `${r(m.macd,3)}/${r(m.signal,3)} (hist ${r(m.hist,3)})` : "—"} · Sharpe ${r(sharpe(closes),2)} · Sortino ${r(sortino(closes),2)} · Calmar ${r(calmar(closes),2)} · MDD ${dd ? pct(dd.dd_pct,1) : "—"} over ${dd?.duration ?? "—"}d.`);
       parts.push(`**[TECH]** SMA20 ${r(sma20v)} · SMA50 ${r(sma50v)} · SMA200 ${r(sma200v)} · price vs SMA200 ${pct(sma200v ? (last/sma200v-1)*100 : null,1)} · Bollinger %B ${bb ? r(bb.pctB,2) : "—"} · ATR14 ${r(atr(bars,14),2)} · realized vol 20d ${pct(stdev(logReturnsLocal(closes.slice(-20)))*Math.sqrt(252)*100,1)}.`);
-      parts.push(`**[MICROSTRUCTURE]** last vol ${r(vols[vols.length-1],0)} vs 20d avg ${r(vol20,0)} · volume z-score **${r(volZ,2)}** · $ vol today ≈ $${r((vols[vols.length-1]||0)*last,0)}.`);
+      parts.push(livePrice != null
+        ? `**[MICROSTRUCTURE]** last vol ${r(vols[vols.length-1],0)} vs 20d avg ${r(vol20,0)} · volume z-score **${r(volZ,2)}** · $ vol today ≈ $${r((vols[vols.length-1]||0)*last,0)}.`
+        : `**[MICROSTRUCTURE]** last vol ${r(vols[vols.length-1],0)} vs 20d avg ${r(vol20,0)} · volume z-score **${r(volZ,2)}**. Dollar-volume estimate paused until live quote returns.`);
       if (beh) {
         parts.push(`**[BEHAVIOR]** anchoring distance from 52w high **${pct(distHigh,1)}** / low **${pct(distLow,1)}** · reflexivity (px/vol corr) **${r(beh.reflexivity_corr,2)}** · crowding **${r(beh.crowding_score,2)}** · recency-z **${r(beh.recency_z,2)}**. Active biases: ${biases.join(", ")}. Reflexive loop: price → narrative (volume z=${r(volZ,2)}) → flow → price.`);
       }
