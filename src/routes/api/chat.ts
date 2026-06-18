@@ -237,8 +237,13 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
 
       const parts: string[] = [];
       parts.push(`### ${sym}${liveQuote?.shortName ? ` (${liveQuote.shortName})` : ""} — ${thesisDir.toUpperCase()} (${regime} regime)`);
-      parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current price **$${r(last)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}. This line is the authoritative spot used for every calculation below.`);
-      parts.push(`**Thesis:** ${sym} prints **$${r(last)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
+      if (livePrice != null) {
+        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}. This line is the authoritative spot used for every calculation below.`);
+        parts.push(`**Thesis:** ${sym} prints **$${r(livePrice)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
+      } else {
+        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current quote unavailable from Yahoo right now; no current dollar price is being printed.`);
+        parts.push(`**Thesis:** Latest Yahoo daily bar is **$${r(last)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
+      }
       parts.push("");
       parts.push(`**[QUANT]** TR ${pct((last/first-1)*100,1)} (1y) · ROC10 ${pct(roc(closes,10),1)} · ROC30 ${pct(roc(closes,30),1)} · ROC90 ${pct(roc(closes,90),1)} · MACD ${m ? `${r(m.macd,3)}/${r(m.signal,3)} (hist ${r(m.hist,3)})` : "—"} · Sharpe ${r(sharpe(closes),2)} · Sortino ${r(sortino(closes),2)} · Calmar ${r(calmar(closes),2)} · MDD ${dd ? pct(dd.dd_pct,1) : "—"} over ${dd?.duration ?? "—"}d.`);
       parts.push(`**[TECH]** SMA20 ${r(sma20v)} · SMA50 ${r(sma50v)} · SMA200 ${r(sma200v)} · price vs SMA200 ${pct(sma200v ? (last/sma200v-1)*100 : null,1)} · Bollinger %B ${bb ? r(bb.pctB,2) : "—"} · ATR14 ${r(atr(bars,14),2)} · realized vol 20d ${pct(stdev(logReturnsLocal(closes.slice(-20)))*Math.sqrt(252)*100,1)}.`);
