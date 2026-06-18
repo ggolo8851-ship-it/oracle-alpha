@@ -80,7 +80,11 @@ async function compute(): Promise<{ generated_at: string; finds: Find[]; univers
   for (const sym of UNIVERSE) {
     const bars = hist.get(sym);
     if (!bars || bars.length < 30) continue;
-    const closes = extractCloses(bars);
+    const q = qMap.get(sym);
+    const adjustedBars = q?.regularMarketPrice
+      ? bars.map((b, idx) => idx === bars.length - 1 ? { ...b, c: q.regularMarketPrice!, h: Math.max(b.h ?? q.regularMarketPrice!, q.regularMarketPrice!), l: Math.min(b.l ?? q.regularMarketPrice!, q.regularMarketPrice!), v: q.regularMarketVolume ?? b.v } : b)
+      : bars;
+    const closes = extractCloses(adjustedBars);
     const vols = extractVolumes(bars);
     if (closes.length < 30) continue;
     const last = closes[closes.length - 1];
@@ -130,7 +134,6 @@ async function compute(): Promise<{ generated_at: string; finds: Find[]; univers
     else if ((ret20 ?? 0) > 5 && above50 > 0) signal = "MOMENTUM";
     else if ((rsi14 ?? 50) > 75) signal = "OVEREXTENDED";
 
-    const q = qMap.get(sym);
     scored.push({
       rank: 0,
       symbol: sym,
