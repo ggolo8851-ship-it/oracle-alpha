@@ -13,6 +13,16 @@ import { extractCloses, logReturns, mean, stdev } from "./indicators";
 const tanh = Math.tanh;
 const sigm = (x: number) => 1 / (1 + Math.exp(-x));
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+function boundedHorizonDrift(closes: number[], oracleDailyDrift: number, horizon = 60): number {
+  const rets = logReturns(closes).slice(-Math.min(90, Math.max(20, closes.length - 1)));
+  const meanDaily = mean(rets);
+  const dailyVol = stdev(rets);
+  const raw = meanDaily * horizon + oracleDailyDrift * Math.sqrt(horizon) * 0.35;
+  const cap = Math.min(0.35, Math.max(0.06, dailyVol * Math.sqrt(horizon) * 0.75 + 0.06));
+  return clamp(raw, -cap, cap);
+}
 
 // ── Upgrade 1: MAD outlier scrub (fat-tail safe) ───────────────────────────
 export function madScrub(values: number[], threshold = 3.5): number[] {
@@ -161,7 +171,7 @@ export function computeMetaState(closes: number[], oracle: {
 }) {
   const cleaned = madScrub(closes);
   const last = cleaned[cleaned.length - 1];
-  const drift = oracle.next_price_drift * 60; // 60-bar horizon
+  const drift = boundedHorizonDrift(cleaned, oracle.next_price_drift, 60); // bounded 60-bar log-return
   const vol = stdev(logReturns(cleaned)) * Math.sqrt(252);
 
   // Quick Monte Carlo around drift for BC
@@ -171,7 +181,7 @@ export function computeMetaState(closes: number[], oracle: {
     mc.push(last * Math.exp(drift + vol * 0.4 * z));
   }
   const bc = bayesianConfidence(mc);
-  const pUp = clamp01(0.5 + oracle.final_signal * 0.3 + sigm(drift) * 0.1);
+  const pUp = clamp01(0.5 + oracle.final_signal * 0.25 + (sigm(drift * 4) - 0.5) * 0.3);
   const eR = drift; // expected log-return over horizon
   const risk = realizedRisk(closes);
 
@@ -200,9 +210,14 @@ export function computeMetaState(closes: number[], oracle: {
     pUp, expectedReturn: eR,
     bayesianConf: bcAdj, dataQuality: dq, csa, risk,
   }) * omegaStar;
+  const directionalEdge = clamp(
+    ((pUp - 0.5) * 2 + Math.tanh(eR * 6) + oracle.final_signal + omegaStar) / 4,
+    -1,
+    1,
+  );
 
   const action: "BUY" | "SHORT" | "HOLD" =
-    ts > 0.005 ? "BUY" : ts < -0.005 ? "SHORT" : "HOLD";
+    Math.abs(ts) < 0.0002 ? "HOLD" : directionalEdge > 0.12 ? "BUY" : directionalEdge < -0.12 ? "SHORT" : "HOLD";
 
   return {
     A_star: round(aStar, 3),
@@ -215,6 +230,7 @@ export function computeMetaState(closes: number[], oracle: {
     E_R_60d: round(eR, 4),
     Risk: round(risk, 3),
     TradeScore: round(ts, 4),
+    DirectionalEdge: round(directionalEdge, 3),
     Action: action,
   };
 }
