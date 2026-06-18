@@ -60,8 +60,12 @@ async function compute() {
   for (const sym of symbols) {
     const bars = hist.get(sym);
     if (!bars || bars.length < 30) continue;
-    const closes = extractCloses(bars);
-    const vols = extractVolumes(bars);
+    const q = qMap.get(sym);
+    const adjustedBars = q?.regularMarketPrice
+      ? bars.map((b, idx) => idx === bars.length - 1 ? { ...b, c: q.regularMarketPrice!, h: Math.max(b.h ?? q.regularMarketPrice!, q.regularMarketPrice!), l: Math.min(b.l ?? q.regularMarketPrice!, q.regularMarketPrice!), v: q.regularMarketVolume ?? b.v } : b)
+      : bars;
+    const closes = extractCloses(adjustedBars);
+    const vols = extractVolumes(adjustedBars);
     if (closes.length < 30 || vols.length < 30) continue;
     const last = closes[closes.length - 1];
 
@@ -137,7 +141,6 @@ async function compute() {
     const catalyst = buildCatalyst(signals, ret5, ret20, volZ, from52H);
     const why = buildWhy(signals, anomaly, accel, volZ);
 
-    const q = qMap.get(sym);
     movers.push({
       rank: 0,
       symbol: sym,
