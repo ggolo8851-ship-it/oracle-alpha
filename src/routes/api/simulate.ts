@@ -2,9 +2,11 @@
 // Oracle100 behavioral final signal so the simulation reflects the system's
 // current quant + behavioral read on the name.
 import { createFileRoute } from "@tanstack/react-router";
-import { getHistory } from "@/lib/yahoo";
+import { getHistory, getQuotes } from "@/lib/yahoo";
 import { extractCloses, logReturns, mean, stdev } from "@/lib/indicators";
 import { computeOracle100 } from "@/lib/oracle100";
+
+const finitePrice = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
 
 export const Route = createFileRoute("/api/simulate")({
   server: {
@@ -17,7 +19,16 @@ export const Route = createFileRoute("/api/simulate")({
         if (!symbol) return Response.json({ error: "symbol required" }, { status: 400 });
 
         try {
-          const bars = await getHistory(symbol, "1y", "1d");
+          const [barsRaw, quote] = await Promise.all([
+            getHistory(symbol, "1y", "1d"),
+            getQuotes([symbol]).then((q) => q[0] ?? null).catch(() => null),
+          ]);
+          const livePrice = finitePrice(quote?.regularMarketPrice) ? quote.regularMarketPrice : null;
+          const bars = livePrice
+            ? barsRaw.map((b, idx) => idx === barsRaw.length - 1
+              ? { ...b, c: livePrice, h: Math.max(b.h ?? livePrice, livePrice), l: Math.min(b.l ?? livePrice, livePrice), v: quote?.regularMarketVolume ?? b.v }
+              : b)
+            : barsRaw;
           const closes = extractCloses(bars);
           if (closes.length < 60) return Response.json({ error: "insufficient history" }, { status: 422 });
           const rets = logReturns(closes);
@@ -77,6 +88,8 @@ export const Route = createFileRoute("/api/simulate")({
           return Response.json({
             symbol, horizon, paths,
             last_price: last,
+            live_verified: livePrice != null,
+            quote_source: livePrice != null ? "Yahoo Finance current quote" : "Yahoo Finance latest daily bar",
             mu_daily: mu, sigma_daily: sigma, behavioral_bias_daily: bias,
             oracle_signal: oracle?.master?.final_signal ?? null,
             fan: { p05, p25, p50, p75, p95 },
