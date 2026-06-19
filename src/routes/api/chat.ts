@@ -25,6 +25,7 @@ import { computeOracle100 } from "@/lib/oracle100";
 import { REGIONS, SECTORS } from "@/lib/universes";
 import { getPrivateEquityCached } from "./private-equity";
 import { computeMetaState, madScrub } from "@/lib/meta-state";
+import { uvetaStep, buildPerspectives } from "@/lib/uveta";
 
 // ───────────────────────────── intent parsing ─────────────────────────────
 
