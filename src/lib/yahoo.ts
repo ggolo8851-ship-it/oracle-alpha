@@ -107,7 +107,7 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
     const res = j?.chart?.result?.[0];
     const meta = res?.meta;
     if (!meta) { cacheSet(ck, null, 30_000); return null; }
-    const price = meta.regularMarketPrice;
+    const price = selectCurrentPrice(meta);
     const prev = meta.chartPreviousClose ?? meta.previousClose;
     const change = price != null && prev != null ? price - prev : undefined;
     const changePct = change != null && prev ? (change / prev) * 100 : undefined;
@@ -117,7 +117,11 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
       longName: meta.longName,
       regularMarketPrice: price,
       regularMarketChange: change,
-      regularMarketChangePercent: changePct,
+      regularMarketChangePercent: selectCurrentChangePct(meta) ?? changePct,
+      preMarketPrice: meta.preMarketPrice,
+      preMarketChangePercent: meta.preMarketChangePercent,
+      postMarketPrice: meta.postMarketPrice,
+      postMarketChangePercent: meta.postMarketChangePercent,
       marketState: meta.marketState,
       regularMarketVolume: meta.regularMarketVolume,
       regularMarketDayHigh: meta.regularMarketDayHigh,
