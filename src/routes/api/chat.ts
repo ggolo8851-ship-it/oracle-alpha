@@ -171,8 +171,6 @@ function mergeLivePriceIntoBars(bars: Awaited<ReturnType<typeof getHistory>>, qu
   const lastBar = out[out.length - 1];
   const lastClose = asFinite(lastBar.c);
   if (lastClose == null) return out;
-  const relGap = Math.abs(live / lastClose - 1);
-  if (relGap < 0.0005) return out;
   out[out.length - 1] = {
     ...lastBar,
     c: live,
@@ -181,6 +179,15 @@ function mergeLivePriceIntoBars(bars: Awaited<ReturnType<typeof getHistory>>, qu
     v: asFinite(quote?.regularMarketVolume) ?? lastBar.v,
   };
   return out;
+}
+
+function quoteSessionLabel(q: any): string {
+  const state = String(q?.marketState ?? "").toUpperCase();
+  if (state.includes("PRE")) return "pre-market";
+  if (state.includes("POST")) return "after-hours";
+  if (state.includes("REGULAR")) return "regular-session";
+  if (state.includes("CLOSED")) return "latest official";
+  return "Yahoo quote";
 }
 
 function evidenceNote(signals: string[]): string {
@@ -239,7 +246,7 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const parts: string[] = [];
       parts.push(`### ${sym}${liveQuote?.shortName ? ` (${liveQuote.shortName})` : ""} — ${thesisDir.toUpperCase()} (${regime} regime)`);
       if (livePrice != null) {
-        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}. This line is the authoritative spot used for every calculation below.`);
+        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current ${quoteSessionLabel(liveQuote)} price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}. This exact spot is injected into the latest bar and is the anchor for every dollar calculation below.`);
         parts.push(`**Thesis:** ${sym} prints **$${r(livePrice)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
       } else {
         parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current quote unavailable from Yahoo right now; no current dollar price is being printed.`);
@@ -291,18 +298,19 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const driftCap = Math.min(0.35, Math.max(0.06, dailyVol * Math.sqrt(60) * 0.75 + 0.06));
       const drift = Math.max(-driftCap, Math.min(driftCap, rawDrift));
       const horizonVol = dailyVol * Math.sqrt(60);
-      const upTarget = last * Math.exp(drift + horizonVol * 0.7);
-      const dnTarget = last * Math.exp(drift - horizonVol * 0.9);
-      const baseTarget = last * Math.exp(drift);
+      const anchorSpot = livePrice ?? last;
+      const upTarget = anchorSpot * Math.exp(drift + horizonVol * 0.7);
+      const dnTarget = anchorSpot * Math.exp(drift - horizonVol * 0.9);
+      const baseTarget = anchorSpot * Math.exp(drift);
       const trendScore = (sma50v ? (last > sma50v ? 1 : -1) : 0) * 0.5 + ((m?.hist ?? 0) > 0 ? 0.5 : -0.5);
       const pUp = Math.max(0.1, Math.min(0.8, 0.5 + (oracle?.master.final_signal ?? 0) * 0.22 + Math.tanh(drift * 4) * 0.12 + trendScore * 0.07));
       const pDn = Math.max(0.05, Math.min(0.6, 1 - pUp - 0.25));
       const pBase = Math.max(0.05, 1 - pUp - pDn);
       parts.push(livePrice != null
-        ? `**[SCENARIOS — 60d horizon]** Bull ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear ~$${r(dnTarget)} (${pct(pDn*100,0)}). Probabilities are heuristic, not certainties — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`
+        ? `**[SCENARIOS — 60d horizon]** Anchor spot **$${r(anchorSpot)}** · Bull band ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base band ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear band ~$${r(dnTarget)} (${pct(pDn*100,0)}). These are volatility-bounded probability bands from the live spot, not a fabricated exact future price — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`
         : `**[SCENARIOS — 60d horizon]** Dollar targets paused because Yahoo live quote is unavailable. Directional probabilities only: Bull ${pct(pUp*100,0)} · Base ${pct(pBase*100,0)} · Bear ${pct(pDn*100,0)}.`);
       parts.push(`**[RISK GEOMETRY]** ann. vol ${pct(annVol,1)} · downside dev ${pct(downsideDeviation(closes),1)} · MDD ${dd ? pct(dd.dd_pct,1) : "—"} · regime ${regime}. Fragility ${rsi14 != null && rsi14 > 70 ? "elevated (overbought)" : rsi14 != null && rsi14 < 30 ? "elevated (oversold cascade)" : "moderate"}.`);
-      parts.push(`**[ASYMMETRY]** Reward/risk ~ ${r((upTarget-last)/Math.max(last-dnTarget,0.01),2)}× with current setup. ${distHigh > -3 ? "Near 52w high — breakout vs. exhaustion choice." : distLow < 5 ? "Near 52w low — capitulation vs. continuation choice." : "Mid-range — momentum-driven."}.`);
+      parts.push(`**[ASYMMETRY]** Reward/risk ~ ${r((upTarget-anchorSpot)/Math.max(anchorSpot-dnTarget,0.01),2)}× with current setup. ${distHigh > -3 ? "Near 52w high — breakout vs. exhaustion choice." : distLow < 5 ? "Near 52w low — capitulation vs. continuation choice." : "Mid-range — momentum-driven."}.`);
       blocks.push(parts.join("\n"));
     } catch (e) {
       blocks.push(livePrice != null
