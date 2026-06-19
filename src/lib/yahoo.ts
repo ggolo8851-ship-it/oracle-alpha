@@ -15,6 +15,11 @@ export type Quote = {
   regularMarketPrice?: number;
   regularMarketChange?: number;
   regularMarketChangePercent?: number;
+  preMarketPrice?: number;
+  preMarketChangePercent?: number;
+  postMarketPrice?: number;
+  postMarketChangePercent?: number;
+  marketState?: string;
   regularMarketVolume?: number;
   regularMarketDayHigh?: number;
   regularMarketDayLow?: number;
@@ -47,6 +52,26 @@ function cacheSet<T>(k: string, v: T, ttlMs: number) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function finiteNumber(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0;
+}
+
+function selectCurrentPrice(q: any): number | undefined {
+  const state = String(q?.marketState ?? "").toUpperCase();
+  if (state.includes("PRE") && finiteNumber(q?.preMarketPrice)) return q.preMarketPrice;
+  if (state.includes("POST") && finiteNumber(q?.postMarketPrice)) return q.postMarketPrice;
+  if (finiteNumber(q?.regularMarketPrice)) return q.regularMarketPrice;
+  if (finiteNumber(q?.postMarketPrice)) return q.postMarketPrice;
+  if (finiteNumber(q?.preMarketPrice)) return q.preMarketPrice;
+  return undefined;
+}
+
+function selectCurrentChangePct(q: any): number | undefined {
+  const state = String(q?.marketState ?? "").toUpperCase();
+  const pick = state.includes("PRE") ? q?.preMarketChangePercent : state.includes("POST") ? q?.postMarketChangePercent : q?.regularMarketChangePercent;
+  return typeof pick === "number" && Number.isFinite(pick) ? pick : q?.regularMarketChangePercent;
+}
 
 // Fetch with host fallback (query1 → query2) and exponential backoff on 429/5xx.
 async function yfetch(path: string, opts: { tries?: number } = {}): Promise<Response | null> {
@@ -93,6 +118,7 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
       regularMarketPrice: price,
       regularMarketChange: change,
       regularMarketChangePercent: changePct,
+      marketState: meta.marketState,
       regularMarketVolume: meta.regularMarketVolume,
       regularMarketDayHigh: meta.regularMarketDayHigh,
       regularMarketDayLow: meta.regularMarketDayLow,
@@ -111,15 +137,20 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
 
 function normalizeQuote(q: any, fallbackSymbol?: string): Quote | null {
   const symbol = String(q?.symbol ?? fallbackSymbol ?? "").toUpperCase();
-  const price = q?.regularMarketPrice ?? q?.postMarketPrice ?? q?.preMarketPrice;
-  if (!symbol || typeof price !== "number" || !Number.isFinite(price) || price <= 0) return null;
+  const price = selectCurrentPrice(q);
+  if (!symbol || !finiteNumber(price)) return null;
   return {
     symbol,
     shortName: q.shortName,
     longName: q.longName,
     regularMarketPrice: price,
     regularMarketChange: q.regularMarketChange,
-    regularMarketChangePercent: q.regularMarketChangePercent,
+    regularMarketChangePercent: selectCurrentChangePct(q),
+    preMarketPrice: q.preMarketPrice,
+    preMarketChangePercent: q.preMarketChangePercent,
+    postMarketPrice: q.postMarketPrice,
+    postMarketChangePercent: q.postMarketChangePercent,
+    marketState: q.marketState,
     regularMarketVolume: q.regularMarketVolume,
     regularMarketDayHigh: q.regularMarketDayHigh,
     regularMarketDayLow: q.regularMarketDayLow,
