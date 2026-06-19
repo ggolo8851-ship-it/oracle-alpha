@@ -25,6 +25,7 @@ import { computeOracle100 } from "@/lib/oracle100";
 import { REGIONS, SECTORS } from "@/lib/universes";
 import { getPrivateEquityCached } from "./private-equity";
 import { computeMetaState, madScrub } from "@/lib/meta-state";
+import { uvetaStep, buildPerspectives } from "@/lib/uveta";
 
 // ───────────────────────────── intent parsing ─────────────────────────────
 
@@ -263,6 +264,24 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
           regimeProbs: [0.35, 0.30, 0.20, 0.15],
         });
         parts.push(`**[META Ω*]** A* **${r(meta.A_star,3)}** · Ω* **${r(meta.Omega_star,3)}** · P(up) ${pct(meta.P_up*100,0)} · E[R]₆₀d ${pct(meta.E_R_60d*100,2)} · BC ${r(meta.BC,2)} · DQ ${r(meta.DQ,2)} · CSA ${r(meta.CSA,2)} · RU ${r(meta.RU,2)} · Risk ${r(meta.Risk,2)} · edge ${r((meta as any).DirectionalEdge,3)} · **TradeScore ${r(meta.TradeScore,4)} → ${meta.Action}**. (A* = regime-adj alpha; Ω* = tanh(Ω′ + A* + C + Conf − U); TradeScore = P(up)·E[R]·BC·DQ·CSA·(1−Risk)·Ω*.)`);
+
+        // UVETA — recursive cognitive synthesis on top of the same signals.
+        const perspectives = buildPerspectives({
+          last, sma50: sma50v, sma200: sma200v, rsi14, macdHist: m?.hist ?? null,
+          volZ, annVol, oracleSignal: o.final_signal,
+          behReflexivity: beh?.reflexivity_corr ?? 0,
+          metaEdge: (meta as any).DirectionalEdge ?? 0,
+        });
+        const lastRet = closes.length > 1 ? Math.log(closes[closes.length-1]/closes[closes.length-2]) : 0;
+        const uv = uvetaStep({
+          perspectives,
+          prevUpsilon: o.final_signal,
+          actualReturn: lastRet,
+          predictedRet: o.next_price_drift,
+        });
+        const topAttn = Object.entries(uv.attention).sort((a,b) => b[1]-a[1]).slice(0,3)
+          .map(([k,v]) => `${k} ${r(v,2)}`).join(" · ");
+        parts.push(`**[UVETA Υ*]** Υ_{t+1} **${r(uv.Upsilon,3)}** · Ξ synth ${r(uv.Xi,3)} · Λ contradiction ${r(uv.Lambda,3)} · Ω coherence ${r(uv.Omega,3)} · Θ novelty ${r(uv.Theta,3)} · Φ failure ${r(uv.Phi,3)} · σ uncertainty ${r(uv.Sigma,3)} · J ${r(uv.J,3)} → **${uv.state}**. Attention: ${topAttn}. (Master law: Υ_{t+1} = tanh(Υ_t ⊕ Ξ ⊕ −Λ ⊕ −Φ ⊕ Θ); contradiction and prediction error erode understanding, novelty perturbs it.)`);
       }
       // scenarios
       const recentRets = logReturnsLocal(closes).slice(-90);
