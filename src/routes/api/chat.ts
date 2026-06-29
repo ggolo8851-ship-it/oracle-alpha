@@ -47,6 +47,25 @@ const STOP = new Set([
 
 const VALID_SYMBOL = /^\$?[A-Z][A-Z0-9.\-]{0,9}$/;
 
+// Common company-name → ticker aliases. Prevents bogus "history AMAZON: 404"
+// when users type the company name instead of the symbol.
+const NAME_TO_TICKER: Record<string, string> = {
+  AMAZON: "AMZN", APPLE: "AAPL", GOOGLE: "GOOGL", ALPHABET: "GOOGL",
+  MICROSOFT: "MSFT", META: "META", FACEBOOK: "META", NVIDIA: "NVDA",
+  TESLA: "TSLA", NETFLIX: "NFLX", DISNEY: "DIS", WALMART: "WMT",
+  COSTCO: "COST", BOEING: "BA", INTEL: "INTC", AMD: "AMD",
+  ORACLE: "ORCL", SALESFORCE: "CRM", ADOBE: "ADBE", PALANTIR: "PLTR",
+  COINBASE: "COIN", ROBINHOOD: "HOOD", UBER: "UBER", LYFT: "LYFT",
+  AIRBNB: "ABNB", SHOPIFY: "SHOP", SQUARE: "SQ", BLOCK: "SQ",
+  PAYPAL: "PYPL", VISA: "V", MASTERCARD: "MA", JPMORGAN: "JPM",
+  GOLDMAN: "GS", BERKSHIRE: "BRK-B", PFIZER: "PFE", MODERNA: "MRNA",
+  EXXON: "XOM", CHEVRON: "CVX", FORD: "F", RIVIAN: "RIVN", LUCID: "LCID",
+  STARBUCKS: "SBUX", MCDONALDS: "MCD", NIKE: "NKE", SOFI: "SOFI",
+};
+
+// Words that look like tickers but almost never are in casual chat.
+const NAME_BLOCKLIST = new Set(Object.keys(NAME_TO_TICKER));
+
 function extractSymbols(text: string): string[] {
   const out = new Set<string>();
   // explicit $TICKER tokens always win
@@ -57,12 +76,14 @@ function extractSymbols(text: string): string[] {
     if (!VALID_SYMBOL.test(t)) continue;
     if (STOP.has(t)) continue;
     if (/^\d+$/.test(t)) continue;
-    // require at least one alpha
     if (!/[A-Z]/.test(t)) continue;
+    // map company name → ticker before adding
+    if (NAME_BLOCKLIST.has(t)) { out.add(NAME_TO_TICKER[t]); continue; }
     out.add(t);
   }
   return Array.from(out).slice(0, 6);
 }
+
 
 type Intent =
   | { kind: "pulse" }
