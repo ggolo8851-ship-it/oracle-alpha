@@ -66,20 +66,40 @@ const NAME_TO_TICKER: Record<string, string> = {
 // Words that look like tickers but almost never are in casual chat.
 const NAME_BLOCKLIST = new Set(Object.keys(NAME_TO_TICKER));
 
+// Finance-context cue. If the message doesn't mention price / stock / ticker /
+// chart / buy / sell / etc., we DO NOT scan random words as tickers — that
+// was causing casual messages and non-English text to be parsed as symbols.
+const FINANCE_CUE = /\b(stock|stocks|ticker|tickers|share|shares|price|prices|quote|quotes|chart|charts|trade|trades|trading|buy|sell|short|long|call|put|option|options|invest|investment|portfolio|earnings|dividend|valuation|market\s*cap|deep|analy[sz]e|analysis|forecast|target|bull|bear|rally|dip|crash|hold|hodl|breakout|simulate|scenario|behavioral|oracle|reflex|rsi|macd|sma|ema|atr|vix|etf|fund|hedge|sector|index|indices|nasdaq|nyse|sp\s*500|s&p|dow|russell)\b/i;
+
 function extractSymbols(text: string): string[] {
   const out = new Set<string>();
-  // explicit $TICKER tokens always win
-  for (const m of text.matchAll(/\$([A-Z][A-Z0-9.\-]{0,9})/g)) out.add(m[1].toUpperCase());
-  for (const raw of text.split(/[^A-Za-z0-9.\-$^]+/)) {
-    const t = raw.toUpperCase().replace(/^\$/, "");
-    if (!t || t.length > 6 || t.length < 1) continue;
-    if (!VALID_SYMBOL.test(t)) continue;
-    if (STOP.has(t)) continue;
-    if (/^\d+$/.test(t)) continue;
-    if (!/[A-Z]/.test(t)) continue;
-    // map company name → ticker before adding
-    if (NAME_BLOCKLIST.has(t)) { out.add(NAME_TO_TICKER[t]); continue; }
-    out.add(t);
+  // 1) Explicit $TICKER tokens — always honored.
+  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9.\-]{0,9})/g)) {
+    out.add(m[1].toUpperCase());
+  }
+  // 2) Company-name aliases — case-insensitive whole-word match.
+  for (const name of Object.keys(NAME_TO_TICKER)) {
+    const re = new RegExp(`\\b${name}\\b`, "i");
+    if (re.test(text)) out.add(NAME_TO_TICKER[name]);
+  }
+  // 3) Bare uppercase tokens — ONLY if the message has a finance cue AND
+  //    the source token was originally ALL-CAPS (length ≥ 2). This stops
+  //    casual / non-English words ("que", "hola", "lol") from becoming tickers.
+  const hasFinanceCue = FINANCE_CUE.test(text) || /\$[A-Za-z]/.test(text);
+  if (hasFinanceCue) {
+    for (const raw of text.split(/[^A-Za-z0-9.\-$^]+/)) {
+      if (!raw) continue;
+      const stripped = raw.replace(/^\$/, "");
+      if (stripped.length < 2 || stripped.length > 6) continue;
+      if (stripped !== stripped.toUpperCase()) continue; // must be ALL-CAPS in source
+      const t = stripped.toUpperCase();
+      if (!VALID_SYMBOL.test(t)) continue;
+      if (STOP.has(t)) continue;
+      if (/^\d+$/.test(t)) continue;
+      if (!/[A-Z]/.test(t)) continue;
+      if (NAME_BLOCKLIST.has(t)) { out.add(NAME_TO_TICKER[t]); continue; }
+      out.add(t);
+    }
   }
   return Array.from(out).slice(0, 6);
 }
