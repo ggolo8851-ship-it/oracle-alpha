@@ -643,8 +643,8 @@ function extractUIAction(text: string): { text: string; ui_action: any | null } 
 // We extract every ticker the LLM mentioned, fetch REAL Yahoo quotes, rewrite
 // any "$NN.NN" token that appears shortly after each ticker, and append an
 // authoritative "LIVE VERIFIED PRICES" footer that the user can always trust.
-async function verifyPricesInText(text: string): Promise<string> {
-  const tickers = extractSymbols(text);
+async function verifyPricesInText(text: string, seedSymbols: string[] = []): Promise<string> {
+  const tickers = Array.from(new Set([...seedSymbols, ...extractKnownSymbols(text)].map((s) => s.toUpperCase()))).slice(0, 8);
   if (tickers.length === 0) return text;
   let quotes: any[] = [];
   try { quotes = await getQuotes(tickers); } catch { return text; }
@@ -866,14 +866,14 @@ export const Route = createFileRoute("/api/chat")({
 
         if (llmText) {
           const { text, ui_action } = extractUIAction(llmText);
-          const verified = await verifyPricesInText(text).catch(() => text);
+          const verified = await verifyPricesInText(text, extractSymbols(query)).catch(() => text);
           const finalAction = ui_action ?? intentToUIAction(intent);
           return Response.json({ text: verified, ui_action: finalAction });
         }
 
         // FALLBACK: gateway unavailable → deterministic answer + intent-driven UI action.
         const detText = await deterministicAnswer(query, intent);
-        const verifiedDet = await verifyPricesInText(detText).catch(() => detText);
+        const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
         const ui_action = intentToUIAction(intent);
         return Response.json({ text: verifiedDet, ui_action });
       },
