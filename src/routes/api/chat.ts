@@ -681,6 +681,31 @@ function requiresDeterministicMarketData(intent: Intent): boolean {
   ].includes(intent.kind);
 }
 
+function localBasicAnswer(query: string): string | null {
+  const q = query.trim();
+  const lower = q.toLowerCase();
+  if (/^(hi|hello|hey|yo|hola|bonjour|hallo|ciao|ol[áa])\b/.test(lower)) {
+    return "Hey — ask me anything. For markets, use a company name or ticker; for normal questions, just ask naturally.";
+  }
+  const arithmetic = q.match(/^\s*what\s+is\s+([0-9+\-*/().\s]+)\??\s*$/i) ?? q.match(/^\s*([0-9+\-*/().\s]+)=?\s*$/);
+  if (arithmetic) {
+    const expr = arithmetic[1].trim();
+    if (/^[0-9+\-*/().\s]+$/.test(expr) && expr.length <= 80) {
+      try {
+        const value = Function(`"use strict"; return (${expr});`)();
+        if (typeof value === "number" && Number.isFinite(value)) return `${expr} = **${r(value, 6).replace(/\.0+$/, "")}**`;
+      } catch {}
+    }
+  }
+  if (/\b(what is|define|explain)\b.*\b(inflation|inflacion|inflación)\b/i.test(lower)) {
+    return "**Inflation** is a sustained rise in the general price level, which means each unit of currency buys less over time. Main drivers: demand running hotter than supply, higher input costs, money/credit expansion, supply shocks, and expectations feeding into wages/prices.";
+  }
+  if (/\b(what is|explain)\b.*\b(uveta|oracle100|oracle 100)\b/i.test(lower)) {
+    return "**UVETA** is the app’s recursive market-cognition layer: it combines multiple perspectives — trend, momentum, psychology, flow, risk, Oracle100, behavior, and meta-state — into a bounded understanding state. It is not a magic price predictor; it produces probabilistic, uncertainty-aware market scenarios anchored to live prices.";
+  }
+  return null;
+}
+
 // Deterministic answer used when LLM is unreachable. Always returns SOMETHING
 // — never a help dump for free-form questions.
 async function deterministicAnswer(query: string, intent: Intent): Promise<string> {
@@ -709,6 +734,8 @@ async function deterministicAnswer(query: string, intent: Intent): Promise<strin
       case "search":         return await synthSearch(intent.query);
       case "help":
       default: {
+        const basic = localBasicAnswer(query);
+        if (basic) return basic;
         // Free-form question with no LLM available: stitch a useful answer from live data.
         const syms = extractSymbols(query);
         const out: string[] = [`## OMEGA THETA — LOCAL ENGINE READ`];
