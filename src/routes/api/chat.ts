@@ -89,6 +89,10 @@ const AMBIGUOUS_LOWER_TICKERS = new Set([
   "AI", "F", "V", "MA", "ON", "NOW", "SHOP", "COST", "META", "ALL", "ARE", "CAN", "LIVE",
 ]);
 
+const AMBIGUOUS_COMPANY_NAMES = new Set([
+  "META", "ORACLE", "APPLE", "BLOCK", "SQUARE", "LIVE", "ARM", "NOW", "SHOP", "GOLD", "OIL",
+]);
+
 // Words that look like tickers but almost never are in casual chat.
 const NAME_BLOCKLIST = new Set(Object.keys(NAME_TO_TICKER));
 
