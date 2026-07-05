@@ -113,7 +113,7 @@ function extractSymbols(text: string): string[] {
   // 2) Company-name aliases — case-insensitive whole-word match.
   for (const name of Object.keys(NAME_TO_TICKER)) {
     const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
-    if (re.test(text)) out.add(NAME_TO_TICKER[name]);
+    if (re.test(text) && (hasFinanceCue || !AMBIGUOUS_COMPANY_NAMES.has(name))) out.add(NAME_TO_TICKER[name]);
   }
   // 3) Known tickers can be lower/upper-case when the user is clearly asking
   //    about markets; unambiguous tickers like "nvda" are honored even in short
@@ -125,8 +125,10 @@ function extractSymbols(text: string): string[] {
     const sourceUpper = stripped === stripped.toUpperCase() && /[A-Z]/.test(stripped);
     const known = COMMON_TICKERS[t];
     if (known) {
+      const explicit = raw.startsWith("$");
       const safeLower = stripped.length >= 3 && !AMBIGUOUS_LOWER_TICKERS.has(t);
-      if (sourceUpper || hasFinanceCue || safeLower) out.add(known);
+      const ambiguous = AMBIGUOUS_LOWER_TICKERS.has(t);
+      if (explicit || (ambiguous ? hasFinanceCue : sourceUpper || hasFinanceCue || safeLower)) out.add(known);
       continue;
     }
     if (!hasFinanceCue || !sourceUpper) continue;
@@ -147,7 +149,7 @@ function extractKnownSymbols(text: string): string[] {
     out.add(m[1].toUpperCase());
   }
   for (const name of Object.keys(NAME_TO_TICKER)) {
-    if (new RegExp(`\\b${escapeRegex(name)}\\b`, "i").test(text)) out.add(NAME_TO_TICKER[name]);
+    if (new RegExp(`\\b${escapeRegex(name)}\\b`, "i").test(text) && !AMBIGUOUS_COMPANY_NAMES.has(name)) out.add(NAME_TO_TICKER[name]);
   }
   for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
     const t = raw.replace(/^\$/, "").toUpperCase();
