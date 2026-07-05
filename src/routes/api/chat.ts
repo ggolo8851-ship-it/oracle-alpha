@@ -771,19 +771,15 @@ export const Route = createFileRoute("/api/chat")({
         const intent = detectIntent(query);
         const history = buildHistory(msgs);
 
-        // Any stock/price/ranking request must stay deterministic so the engine
-        // cannot hallucinate prices, hidden liquidity, dark-pool claims, or bogus math.
-        if (extractSymbols(query).length > 0 || requiresDeterministicMarketData(intent)) {
-          const detText = await deterministicAnswer(query, intent);
-          const verifiedDet = await verifyPricesInText(detText).catch(() => detText);
-          const ui_action = intentToUIAction(intent);
-          return Response.json({ text: verifiedDet, ui_action });
-        }
+        // Build best-effort context packet (deterministic engine, may partially
+        // fail on network — packet is bounded and always safe to skip).
+        const packet = await buildContextPacket(query, intent).catch(() => "");
 
-        // Build context packet from deterministic engine (best-effort, bounded).
-        const packet = await buildContextPacket(query, intent);
-
-        // PRIMARY: real LLM reply, grounded in the packet.
+        // PRIMARY: LLM answers ANY query (basic conversation, questions,
+        // theory, tickers) grounded in the packet. The price verifier below
+        // rewrites any invented numbers with real Yahoo quotes and appends
+        // an authoritative verified-price footer — so hallucination risk on
+        // dollar figures is neutralized regardless of what the model wrote.
         const llmText = await callLLM(history, packet);
 
         if (llmText) {
