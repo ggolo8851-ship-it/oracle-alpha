@@ -809,26 +809,14 @@ async function callLLM(
     ? `${OMEGA_SYSTEM}\n\n=== CONTEXT PACKET (ground truth — preserve every number/tag) ===\n${packet}\n=== END PACKET ===`
     : OMEGA_SYSTEM;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15_000);
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "Lovable-API-Key": key,
-        "X-Lovable-AIG-SDK": "omega-theta-core",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        temperature: 0.6,
-        messages: [{ role: "system", content: systemMsg }, ...history],
-      }),
-    }).finally(() => clearTimeout(timer));
-    if (!res.ok) return null; // 402 / 429 / 5xx → silent fallback
-    const j: any = await res.json();
-    const out = j?.choices?.[0]?.message?.content;
-    return typeof out === "string" && out.trim().length > 0 ? out.trim() : null;
+    const gateway = createLovableAiGatewayProvider(key);
+    const result = await generateText({
+      model: gateway("google/gemini-3-flash-preview"),
+      temperature: 0.45,
+      abortSignal: AbortSignal.timeout(15_000),
+      messages: [{ role: "system", content: systemMsg }, ...history],
+    });
+    return result.text.trim().length > 0 ? result.text.trim() : null;
   } catch {
     return null; // timeout / network → silent fallback
   }
