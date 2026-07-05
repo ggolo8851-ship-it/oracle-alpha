@@ -1,17 +1,13 @@
-// OMEGA THETA CORE — DATA-DRIVEN ANALYTICAL ENGINE
-// This endpoint is intentionally NOT an LLM. There is no gateway call, no
-// "Payment Required", no rate limit on prompts. Every response is synthesized
-// deterministically by routing the user's query through the existing data
-// tools (Yahoo / NASDAQ feed + Oracle100 behavioral state-space + indicator
-// stack + pulse/news/top-finds/private-equity cached scanners) and rendering
-// the result as institutional-grade markdown.
-//
-// External AI systems (Gemini / OpenAI / Claude) may have generated some of
-// the upstream signals at cache time, but the live request path is pure
-// data + mathematics. Prompts are unlimited.
+// OMEGA THETA CORE — HYBRID MARKET + LANGUAGE ENGINE
+// Market-data questions are answered by the deterministic live-data stack first
+// so prices, indicators, and scenarios stay anchored to the current Yahoo feed.
+// General conversation / definitions / reasoning questions use the AI layer with
+// a compact ground-truth packet when relevant.
 
 import { createFileRoute } from "@tanstack/react-router";
+import { generateText } from "ai";
 import { getHistory, getMarketSnapshot, getQuotes, searchSymbols } from "@/lib/yahoo";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import {
   atr, bollinger, calmar, downsideDeviation, ema, extractCloses, extractVolumes,
   macd, maxDrawdown, mean, roc, rsi, sharpe, sma, sortino, stdev,
@@ -43,9 +39,13 @@ const STOP = new Set([
   "MARKET","STOCK","STOCKS","PRICE","TREND","VOLUME","NEWS","MACRO","SIM",
   "SIMULATE","SIMULATION","FEAR","GREED","REGIME","WATCH","PRIVATE","EQUITY",
   "EXPLAIN","LEADER","FINDS","MOVERS","REVIEW","DCA","ROI","PE","PEG","EPS",
+  "LIVE","VERIFIED","CURRENT","STATUS","TICKER","EXCHANGE","YAHOO","FINANCE",
+  "FEED","GROUND","TRUTH","CONTEXT","PACKET","END","CORE","OMEGA","THETA",
+  "QUANT","TECH","MICROSTRUCTURE","BEHAVIOR","SCENARIOS","RISK","ASYMMETRY",
+  "PRICELESS","PRICES","PENDING","INJECTION","ANALYZE","SIGNAL","TARGET",
 ]);
 
-const VALID_SYMBOL = /^\$?[A-Z][A-Z0-9.\-]{0,9}$/;
+const VALID_SYMBOL = /^\$?\^?[A-Z0-9][A-Z0-9.\-=]{0,11}$/;
 
 // Common company-name → ticker aliases. Prevents bogus "history AMAZON: 404"
 // when users type the company name instead of the symbol.
@@ -61,7 +61,30 @@ const NAME_TO_TICKER: Record<string, string> = {
   GOLDMAN: "GS", BERKSHIRE: "BRK-B", PFIZER: "PFE", MODERNA: "MRNA",
   EXXON: "XOM", CHEVRON: "CVX", FORD: "F", RIVIAN: "RIVN", LUCID: "LCID",
   STARBUCKS: "SBUX", MCDONALDS: "MCD", NIKE: "NKE", SOFI: "SOFI",
+  NIKOLA: "NKLA", SONY: "SONY", TOYOTA: "TM", HONDA: "HMC",
+  TENCENT: "TCEHY", ALIBABA: "BABA", TSMC: "TSM", BROADCOM: "AVGO",
+  QUALCOMM: "QCOM", ARM: "ARM", SUPERMICRO: "SMCI", SUPERMICROCOMPUTER: "SMCI",
+  BITCOIN: "BTC-USD", ETHEREUM: "ETH-USD", DOGECOIN: "DOGE-USD", SOLANA: "SOL-USD",
+  GOLD: "GC=F", OIL: "CL=F", VIX: "^VIX",
 };
+
+const COMMON_TICKERS: Record<string, string> = {
+  AAPL: "AAPL", MSFT: "MSFT", NVDA: "NVDA", AMZN: "AMZN", GOOGL: "GOOGL", GOOG: "GOOG",
+  META: "META", TSLA: "TSLA", AMD: "AMD", INTC: "INTC", AVGO: "AVGO", QCOM: "QCOM",
+  ARM: "ARM", SMCI: "SMCI", NFLX: "NFLX", DIS: "DIS", WMT: "WMT", COST: "COST",
+  MCD: "MCD", NKE: "NKE", SBUX: "SBUX", JPM: "JPM", BAC: "BAC", GS: "GS",
+  MS: "MS", V: "V", MA: "MA", PYPL: "PYPL", SQ: "SQ", COIN: "COIN", HOOD: "HOOD",
+  PLTR: "PLTR", ORCL: "ORCL", CRM: "CRM", ADBE: "ADBE", NOW: "NOW", SHOP: "SHOP",
+  UBER: "UBER", LYFT: "LYFT", ABNB: "ABNB", RIVN: "RIVN", LCID: "LCID", F: "F",
+  GM: "GM", XOM: "XOM", CVX: "CVX", PFE: "PFE", MRNA: "MRNA", BA: "BA",
+  SOFI: "SOFI", AI: "AI", SPY: "SPY", QQQ: "QQQ", DIA: "DIA", IWM: "IWM",
+  BTC: "BTC-USD", ETH: "ETH-USD", DOGE: "DOGE-USD", SOL: "SOL-USD", VIX: "^VIX",
+  DXY: "DX-Y.NYB", GOLD: "GC=F", OIL: "CL=F",
+};
+
+const AMBIGUOUS_LOWER_TICKERS = new Set([
+  "AI", "F", "V", "MA", "ON", "NOW", "SHOP", "COST", "META", "ALL", "ARE", "CAN", "LIVE",
+]);
 
 // Words that look like tickers but almost never are in casual chat.
 const NAME_BLOCKLIST = new Set(Object.keys(NAME_TO_TICKER));
@@ -69,37 +92,44 @@ const NAME_BLOCKLIST = new Set(Object.keys(NAME_TO_TICKER));
 // Finance-context cue. If the message doesn't mention price / stock / ticker /
 // chart / buy / sell / etc., we DO NOT scan random words as tickers — that
 // was causing casual messages and non-English text to be parsed as symbols.
-const FINANCE_CUE = /\b(stock|stocks|ticker|tickers|share|shares|price|prices|quote|quotes|chart|charts|trade|trades|trading|buy|sell|short|long|call|put|option|options|invest|investment|portfolio|earnings|dividend|valuation|market\s*cap|deep|analy[sz]e|analysis|forecast|target|bull|bear|rally|dip|crash|hold|hodl|breakout|simulate|scenario|behavioral|oracle|reflex|rsi|macd|sma|ema|atr|vix|etf|fund|hedge|sector|index|indices|nasdaq|nyse|sp\s*500|s&p|dow|russell)\b/i;
+const FINANCE_CUE = /\b(stock|stocks|sticker|stickers|ticker|tickers|share|shares|equity|equities|price|prices|quote|quotes|chart|charts|trade|trades|trading|buy|sell|short|long|call|put|option|options|invest|investment|portfolio|earnings|dividend|valuation|market\s*cap|deep|analy[sz]e|analysis|forecast|predict|prediction|target|bull|bear|rally|dip|crash|hold|hodl|breakout|simulate|scenario|behavioral|oracle|reflex|rsi|macd|sma|ema|atr|vix|etf|fund|hedge|sector|index|indices|nasdaq|nyse|sp\s*500|s&p|dow|russell|precio|precios|acción|acciones|cotización|comprar|vender|mercado|bolsa|inversión|investir|ação|ações|preço|cours|action|actions|bourse|acheter|vendre|prix|aktie|aktien|kurs|börse|kaufen|verkaufen|prezzo|azioni|mercato|investire|株価|株式|价格|股票|股价|سهم|سعر|سوق)\b/i;
+
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function extractSymbols(text: string): string[] {
   const out = new Set<string>();
+  const hasFinanceCue = FINANCE_CUE.test(text) || /\$[A-Za-z]/.test(text);
   // 1) Explicit $TICKER tokens — always honored.
-  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9.\-]{0,9})/g)) {
+  for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
     out.add(m[1].toUpperCase());
   }
   // 2) Company-name aliases — case-insensitive whole-word match.
   for (const name of Object.keys(NAME_TO_TICKER)) {
-    const re = new RegExp(`\\b${name}\\b`, "i");
+    const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
     if (re.test(text)) out.add(NAME_TO_TICKER[name]);
   }
-  // 3) Bare uppercase tokens — ONLY if the message has a finance cue AND
-  //    the source token was originally ALL-CAPS (length ≥ 2). This stops
-  //    casual / non-English words ("que", "hola", "lol") from becoming tickers.
-  const hasFinanceCue = FINANCE_CUE.test(text) || /\$[A-Za-z]/.test(text);
-  if (hasFinanceCue) {
-    for (const raw of text.split(/[^A-Za-z0-9.\-$^]+/)) {
-      if (!raw) continue;
-      const stripped = raw.replace(/^\$/, "");
-      if (stripped.length < 2 || stripped.length > 6) continue;
-      if (stripped !== stripped.toUpperCase()) continue; // must be ALL-CAPS in source
-      const t = stripped.toUpperCase();
-      if (!VALID_SYMBOL.test(t)) continue;
-      if (STOP.has(t)) continue;
-      if (/^\d+$/.test(t)) continue;
-      if (!/[A-Z]/.test(t)) continue;
-      if (NAME_BLOCKLIST.has(t)) { out.add(NAME_TO_TICKER[t]); continue; }
-      out.add(t);
+  // 3) Known tickers can be lower/upper-case when the user is clearly asking
+  //    about markets; unambiguous tickers like "nvda" are honored even in short
+  //    casual prompts. Unknown bare symbols still require ALL-CAPS + finance cue.
+  for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
+    if (!raw) continue;
+    const stripped = raw.replace(/^\$/, "");
+    const t = stripped.toUpperCase();
+    const sourceUpper = stripped === stripped.toUpperCase() && /[A-Z]/.test(stripped);
+    const known = COMMON_TICKERS[t];
+    if (known) {
+      const safeLower = stripped.length >= 3 && !AMBIGUOUS_LOWER_TICKERS.has(t);
+      if (sourceUpper || hasFinanceCue || safeLower) out.add(known);
+      continue;
     }
+    if (!hasFinanceCue || !sourceUpper) continue;
+    if (stripped.length < 2 || stripped.length > 12) continue;
+    if (!VALID_SYMBOL.test(t)) continue;
+    if (STOP.has(t)) continue;
+    if (/^\d+$/.test(t)) continue;
+    if (!/[A-Z]/.test(t)) continue;
+    if (NAME_BLOCKLIST.has(t)) { out.add(NAME_TO_TICKER[t]); continue; }
+    out.add(t);
   }
   return Array.from(out).slice(0, 6);
 }
