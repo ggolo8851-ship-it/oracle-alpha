@@ -853,6 +853,18 @@ export const Route = createFileRoute("/api/chat")({
         const intent = detectIntent(query);
         const history = buildHistory(msgs);
 
+        // Market-data requests must be exact before they are eloquent. Answer
+        // those with the live deterministic engine first; use the LLM only for
+        // general language understanding and non-market reasoning.
+        if (shouldUseDeterministicFirst(query, intent)) {
+          const detText = await deterministicAnswer(query, intent);
+          const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
+          return Response.json({ text: verifiedDet, ui_action: intentToUIAction(intent) });
+        }
+
+        const basic = localBasicAnswer(query);
+        if (basic) return Response.json({ text: basic, ui_action: null });
+
         // Build best-effort context packet (deterministic engine, may partially
         // fail on network — packet is bounded and always safe to skip).
         const packet = await buildContextPacket(query, intent).catch(() => "");
