@@ -708,9 +708,6 @@ function requiresDeterministicMarketData(intent: Intent): boolean {
 function localBasicAnswer(query: string): string | null {
   const q = query.trim();
   const lower = q.toLowerCase();
-  if (/^(hi|hello|hey|yo|hola|bonjour|hallo|ciao|ol[áa])\b/.test(lower)) {
-    return "Hey — ask me anything. For markets, use a company name or ticker; for normal questions, just ask naturally.";
-  }
   const arithmetic = q.match(/^\s*what\s+is\s+([0-9+\-*/().\s]+)\??\s*$/i) ?? q.match(/^\s*([0-9+\-*/().\s]+)=?\s*$/);
   if (arithmetic) {
     const expr = arithmetic[1].trim();
@@ -724,8 +721,14 @@ function localBasicAnswer(query: string): string | null {
   if (/\b(what is|define|explain)\b.*\b(inflation|inflacion|inflación)\b/i.test(lower)) {
     return "**Inflation** is a sustained rise in the general price level, which means each unit of currency buys less over time. Main drivers: demand running hotter than supply, higher input costs, money/credit expansion, supply shocks, and expectations feeding into wages/prices.";
   }
+  if (/\b(que es|qué es|define|explica)\b.*\b(inflacion|inflación)\b/i.test(lower)) {
+    return "**La inflación** es un aumento sostenido del nivel general de precios. En términos simples: con la misma cantidad de dinero compras menos que antes. Suele venir de demanda fuerte, costos más altos, expansión de crédito/dinero, shocks de oferta y expectativas que se trasladan a salarios y precios.";
+  }
   if (/\b(what is|explain)\b.*\b(uveta|oracle100|oracle 100)\b/i.test(lower)) {
     return "**UVETA** is the app’s recursive market-cognition layer: it combines multiple perspectives — trend, momentum, psychology, flow, risk, Oracle100, behavior, and meta-state — into a bounded understanding state. It is not a magic price predictor; it produces probabilistic, uncertainty-aware market scenarios anchored to live prices.";
+  }
+  if (/^(hi|hello|hey|yo|hola|bonjour|hallo|ciao|ol[áa])\b[!?.\s]*$/i.test(lower)) {
+    return "Hey — ask me anything. For markets, use a company name or ticker; for normal questions, just ask naturally.";
   }
   return null;
 }
