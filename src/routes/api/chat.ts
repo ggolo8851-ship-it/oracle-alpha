@@ -1,17 +1,13 @@
-// OMEGA THETA CORE — DATA-DRIVEN ANALYTICAL ENGINE
-// This endpoint is intentionally NOT an LLM. There is no gateway call, no
-// "Payment Required", no rate limit on prompts. Every response is synthesized
-// deterministically by routing the user's query through the existing data
-// tools (Yahoo / NASDAQ feed + Oracle100 behavioral state-space + indicator
-// stack + pulse/news/top-finds/private-equity cached scanners) and rendering
-// the result as institutional-grade markdown.
-//
-// External AI systems (Gemini / OpenAI / Claude) may have generated some of
-// the upstream signals at cache time, but the live request path is pure
-// data + mathematics. Prompts are unlimited.
+// OMEGA THETA CORE — HYBRID MARKET + LANGUAGE ENGINE
+// Market-data questions are answered by the deterministic live-data stack first
+// so prices, indicators, and scenarios stay anchored to the current Yahoo feed.
+// General conversation / definitions / reasoning questions use the AI layer with
+// a compact ground-truth packet when relevant.
 
 import { createFileRoute } from "@tanstack/react-router";
+import { generateText } from "ai";
 import { getHistory, getMarketSnapshot, getQuotes, searchSymbols } from "@/lib/yahoo";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
 import {
   atr, bollinger, calmar, downsideDeviation, ema, extractCloses, extractVolumes,
   macd, maxDrawdown, mean, roc, rsi, sharpe, sma, sortino, stdev,
@@ -43,9 +39,16 @@ const STOP = new Set([
   "MARKET","STOCK","STOCKS","PRICE","TREND","VOLUME","NEWS","MACRO","SIM",
   "SIMULATE","SIMULATION","FEAR","GREED","REGIME","WATCH","PRIVATE","EQUITY",
   "EXPLAIN","LEADER","FINDS","MOVERS","REVIEW","DCA","ROI","PE","PEG","EPS",
+  "LIVE","VERIFIED","CURRENT","STATUS","TICKER","EXCHANGE","YAHOO","FINANCE",
+  "FEED","GROUND","TRUTH","CONTEXT","PACKET","END","CORE","OMEGA","THETA",
+  "QUANT","TECH","MICROSTRUCTURE","BEHAVIOR","SCENARIOS","RISK","ASYMMETRY",
+  "PRICELESS","PRICES","PENDING","INJECTION","ANALYZE","SIGNAL","TARGET",
+  "MDD","ROC","ROC10","ROC30","ROC90","BOLLINGER","SHARPE","SORTINO","CALMAR",
+  "LIVE VERIFIED","REGULAR","SESSION","LATEST","OFFICIAL","HISTORICAL","INDICATOR",
+  "UNKNOWN","STABLE","FRAGILE","DIVERGING","CONVERGING","REFLEXIVE","MIXED",
 ]);
 
-const VALID_SYMBOL = /^\$?[A-Z][A-Z0-9.\-]{0,9}$/;
+const VALID_SYMBOL = /^\$?\^?[A-Z0-9][A-Z0-9.\-=]{0,11}$/;
 
 // Common company-name → ticker aliases. Prevents bogus "history AMAZON: 404"
 // when users type the company name instead of the symbol.
@@ -61,7 +64,34 @@ const NAME_TO_TICKER: Record<string, string> = {
   GOLDMAN: "GS", BERKSHIRE: "BRK-B", PFIZER: "PFE", MODERNA: "MRNA",
   EXXON: "XOM", CHEVRON: "CVX", FORD: "F", RIVIAN: "RIVN", LUCID: "LCID",
   STARBUCKS: "SBUX", MCDONALDS: "MCD", NIKE: "NKE", SOFI: "SOFI",
+  NIKOLA: "NKLA", SONY: "SONY", TOYOTA: "TM", HONDA: "HMC",
+  TENCENT: "TCEHY", ALIBABA: "BABA", TSMC: "TSM", BROADCOM: "AVGO",
+  QUALCOMM: "QCOM", ARM: "ARM", SUPERMICRO: "SMCI", SUPERMICROCOMPUTER: "SMCI",
+  BITCOIN: "BTC-USD", ETHEREUM: "ETH-USD", DOGECOIN: "DOGE-USD", SOLANA: "SOL-USD",
+  GOLD: "GC=F", OIL: "CL=F", VIX: "^VIX",
 };
+
+const COMMON_TICKERS: Record<string, string> = {
+  AAPL: "AAPL", MSFT: "MSFT", NVDA: "NVDA", AMZN: "AMZN", GOOGL: "GOOGL", GOOG: "GOOG",
+  META: "META", TSLA: "TSLA", AMD: "AMD", INTC: "INTC", AVGO: "AVGO", QCOM: "QCOM",
+  ARM: "ARM", SMCI: "SMCI", NFLX: "NFLX", DIS: "DIS", WMT: "WMT", COST: "COST",
+  MCD: "MCD", NKE: "NKE", SBUX: "SBUX", JPM: "JPM", BAC: "BAC", GS: "GS",
+  MS: "MS", V: "V", MA: "MA", PYPL: "PYPL", SQ: "SQ", COIN: "COIN", HOOD: "HOOD",
+  PLTR: "PLTR", ORCL: "ORCL", CRM: "CRM", ADBE: "ADBE", NOW: "NOW", SHOP: "SHOP",
+  UBER: "UBER", LYFT: "LYFT", ABNB: "ABNB", RIVN: "RIVN", LCID: "LCID", F: "F",
+  GM: "GM", XOM: "XOM", CVX: "CVX", PFE: "PFE", MRNA: "MRNA", BA: "BA",
+  SOFI: "SOFI", AI: "AI", SPY: "SPY", QQQ: "QQQ", DIA: "DIA", IWM: "IWM",
+  BTC: "BTC-USD", ETH: "ETH-USD", DOGE: "DOGE-USD", SOL: "SOL-USD", VIX: "^VIX",
+  DXY: "DX-Y.NYB", GOLD: "GC=F", OIL: "CL=F",
+};
+
+const AMBIGUOUS_LOWER_TICKERS = new Set([
+  "AI", "F", "V", "MA", "ON", "NOW", "SHOP", "COST", "META", "ALL", "ARE", "CAN", "LIVE",
+]);
+
+const AMBIGUOUS_COMPANY_NAMES = new Set([
+  "META", "ORACLE", "APPLE", "BLOCK", "SQUARE", "LIVE", "ARM", "NOW", "SHOP", "GOLD", "OIL",
+]);
 
 // Words that look like tickers but almost never are in casual chat.
 const NAME_BLOCKLIST = new Set(Object.keys(NAME_TO_TICKER));
@@ -69,39 +99,63 @@ const NAME_BLOCKLIST = new Set(Object.keys(NAME_TO_TICKER));
 // Finance-context cue. If the message doesn't mention price / stock / ticker /
 // chart / buy / sell / etc., we DO NOT scan random words as tickers — that
 // was causing casual messages and non-English text to be parsed as symbols.
-const FINANCE_CUE = /\b(stock|stocks|ticker|tickers|share|shares|price|prices|quote|quotes|chart|charts|trade|trades|trading|buy|sell|short|long|call|put|option|options|invest|investment|portfolio|earnings|dividend|valuation|market\s*cap|deep|analy[sz]e|analysis|forecast|target|bull|bear|rally|dip|crash|hold|hodl|breakout|simulate|scenario|behavioral|oracle|reflex|rsi|macd|sma|ema|atr|vix|etf|fund|hedge|sector|index|indices|nasdaq|nyse|sp\s*500|s&p|dow|russell)\b/i;
+const FINANCE_CUE = /\b(stock|stocks|sticker|stickers|ticker|tickers|share|shares|equity|equities|price|prices|quote|quotes|chart|charts|trade|trades|trading|buy|sell|short|long|call|put|option|options|invest|investment|portfolio|earnings|dividend|valuation|market\s*cap|deep|analy[sz]e|analysis|forecast|predict|prediction|target|bull|bear|rally|dip|crash|hold|hodl|breakout|simulate|scenario|behavioral|oracle|reflex|rsi|macd|sma|ema|atr|vix|etf|fund|hedge|sector|index|indices|nasdaq|nyse|sp\s*500|s&p|dow|russell|precio|precios|acción|acciones|cotización|comprar|vender|mercado|bolsa|inversión|investir|ação|ações|preço|cours|action|actions|bourse|acheter|vendre|prix|aktie|aktien|kurs|börse|kaufen|verkaufen|prezzo|azioni|mercato|investire|株価|株式|价格|股票|股价|سهم|سعر|سوق)\b/i;
+
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function extractSymbols(text: string): string[] {
   const out = new Set<string>();
+  const hasFinanceCue = FINANCE_CUE.test(text) || /\$[A-Za-z]/.test(text);
   // 1) Explicit $TICKER tokens — always honored.
-  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9.\-]{0,9})/g)) {
+  for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
     out.add(m[1].toUpperCase());
   }
   // 2) Company-name aliases — case-insensitive whole-word match.
   for (const name of Object.keys(NAME_TO_TICKER)) {
-    const re = new RegExp(`\\b${name}\\b`, "i");
-    if (re.test(text)) out.add(NAME_TO_TICKER[name]);
+    const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
+    if (re.test(text) && (hasFinanceCue || !AMBIGUOUS_COMPANY_NAMES.has(name))) out.add(NAME_TO_TICKER[name]);
   }
-  // 3) Bare uppercase tokens — ONLY if the message has a finance cue AND
-  //    the source token was originally ALL-CAPS (length ≥ 2). This stops
-  //    casual / non-English words ("que", "hola", "lol") from becoming tickers.
-  const hasFinanceCue = FINANCE_CUE.test(text) || /\$[A-Za-z]/.test(text);
-  if (hasFinanceCue) {
-    for (const raw of text.split(/[^A-Za-z0-9.\-$^]+/)) {
-      if (!raw) continue;
-      const stripped = raw.replace(/^\$/, "");
-      if (stripped.length < 2 || stripped.length > 6) continue;
-      if (stripped !== stripped.toUpperCase()) continue; // must be ALL-CAPS in source
-      const t = stripped.toUpperCase();
-      if (!VALID_SYMBOL.test(t)) continue;
-      if (STOP.has(t)) continue;
-      if (/^\d+$/.test(t)) continue;
-      if (!/[A-Z]/.test(t)) continue;
-      if (NAME_BLOCKLIST.has(t)) { out.add(NAME_TO_TICKER[t]); continue; }
-      out.add(t);
+  // 3) Known tickers can be lower/upper-case when the user is clearly asking
+  //    about markets; unambiguous tickers like "nvda" are honored even in short
+  //    casual prompts. Unknown bare symbols still require ALL-CAPS + finance cue.
+  for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
+    if (!raw) continue;
+    const stripped = raw.replace(/^\$/, "");
+    const t = stripped.toUpperCase();
+    const sourceUpper = stripped === stripped.toUpperCase() && /[A-Z]/.test(stripped);
+    const known = COMMON_TICKERS[t];
+    if (known) {
+      const explicit = raw.startsWith("$");
+      const safeLower = stripped.length >= 3 && !AMBIGUOUS_LOWER_TICKERS.has(t);
+      const ambiguous = AMBIGUOUS_LOWER_TICKERS.has(t);
+      if (explicit || (ambiguous ? hasFinanceCue : sourceUpper || hasFinanceCue || safeLower)) out.add(known);
+      continue;
     }
+    if (!hasFinanceCue || !sourceUpper) continue;
+    if (stripped.length < 2 || stripped.length > 12) continue;
+    if (!VALID_SYMBOL.test(t)) continue;
+    if (STOP.has(t)) continue;
+    if (/^\d+$/.test(t)) continue;
+    if (!/[A-Z]/.test(t)) continue;
+    if (NAME_BLOCKLIST.has(t)) { out.add(NAME_TO_TICKER[t]); continue; }
+    out.add(t);
   }
   return Array.from(out).slice(0, 6);
+}
+
+function extractKnownSymbols(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
+    out.add(m[1].toUpperCase());
+  }
+  for (const name of Object.keys(NAME_TO_TICKER)) {
+    if (new RegExp(`\\b${escapeRegex(name)}\\b`, "i").test(text) && !AMBIGUOUS_COMPANY_NAMES.has(name)) out.add(NAME_TO_TICKER[name]);
+  }
+  for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
+    const t = raw.replace(/^\$/, "").toUpperCase();
+    if (COMMON_TICKERS[t]) out.add(COMMON_TICKERS[t]);
+  }
+  return Array.from(out).slice(0, 8);
 }
 
 
@@ -191,6 +245,23 @@ const qChangePct = (q: any): number | null | undefined =>
 const quoteSymbol = (q: any): string => String(q?.symbol ?? "").toUpperCase();
 const asFinite = (n: unknown): number | null =>
   typeof n === "number" && Number.isFinite(n) ? n : null;
+
+const isUIIntent = (intent: Intent) => intent.kind.startsWith("ui_");
+
+function shouldUseDeterministicFirst(query: string, intent: Intent): boolean {
+  if (isUIIntent(intent)) return true;
+  if (intent.kind === "ticker" || intent.kind === "snapshot" || intent.kind === "top_finds" ||
+      intent.kind === "next_big" || intent.kind === "region_sector" || intent.kind === "fear_greed" ||
+      intent.kind === "pulse" || intent.kind === "private_equity") return true;
+  const lower = query.toLowerCase();
+  return extractSymbols(query).length > 0 &&
+    /\b(price|prices|quote|stock|stocks|share|shares|forecast|predict|prediction|target|analysis|analy[sz]e|buy|sell|hold|chart|rsi|macd|precio|precios|株価|股价)\b/i.test(lower);
+}
+
+function isPlainHelpAnswer(query: string, answer: string): boolean {
+  if (query.trim().length > 0) return false;
+  return /OMEGA THETA CORE|Examples:/i.test(answer);
+}
 
 async function fetchLiveQuoteMap(symbols: string[]): Promise<Map<string, any>> {
   const unique = Array.from(new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))).slice(0, 12);
@@ -449,7 +520,7 @@ async function synthSearch(q: string): Promise<string> {
 // the gateway returns 402 / 429 / 5xx / times out, so the user never sees a
 // credit/payment error and always gets a real answer.
 
-const OMEGA_SYSTEM = `You are OMEGA THETA CORE — a research-grade adaptive market cognition engine. You fuse quantitative finance, behavioral economics, narrative reflexivity, microstructure, causal inference, and probabilistic reasoning into structured strategic insight. You answer ANY question — finance, math, theory, geopolitics, definitions, casual chat — in ANY human language the user writes in (English, Spanish, French, German, Portuguese, Italian, Chinese, Japanese, Korean, Arabic, Hindi, Russian, etc.). Detect the user's language and reply in that same language unless they ask otherwise. Understand abbreviations, slang, typos, and casual conversational phrasing — interpret intent, do NOT take random letters or short words as stock tickers unless the user clearly references a stock (uses $TICKER, names a company, or talks about price/shares/charts/buy/sell). You never refuse. You never say you are "deterministic only" — you ARE the AI layer.
+const OMEGA_SYSTEM = `You are OMEGA THETA CORE — a research-grade adaptive market cognition engine and a normal conversational assistant. You fuse quantitative finance, behavioral economics, narrative reflexivity, microstructure, causal inference, and probabilistic reasoning into structured strategic insight when finance is relevant. You also answer basic questions directly like a search assistant: definitions, arithmetic, explanations, commands, casual chat, and follow-ups. You answer in ANY human language the user writes in (English, Spanish, French, German, Portuguese, Italian, Chinese, Japanese, Korean, Arabic, Hindi, Russian, etc.). Detect the user's language and reply in that same language unless they ask otherwise. Understand abbreviations, slang, typos, and casual conversational phrasing — interpret intent, do NOT take random letters or short words as stock tickers unless the user clearly references a stock (uses $TICKER, names a company, or talks about price/shares/charts/buy/sell). You never refuse. You never say you are "deterministic only" — you ARE the AI layer.
 
 YOUR INTERNAL ENGINE (the user does not see this directly — you do)
 Live data: Yahoo / NASDAQ feed (prices, volume, options-vol proxies, indices, FX, rates).
@@ -474,12 +545,14 @@ META-STATE FORMULAS YOU MUST USE BY NAME WHEN A PACKET CONTAINS THEM
 
 WHAT YOU RESPOND TO
  • If a CONTEXT PACKET is provided below, every number/ticker/tag in it is GROUND TRUTH — preserve exactly, never invent prices or tickers not in the packet. Layer interpretation, cross-signal synthesis, named biases, reflexivity reasoning, and the META-STATE numbers on top.
- • If no packet, still answer fully from your reasoning and your latest knowledge of markets, macro, history, theory. Use the live general knowledge baked into your training (this model is up-to-date). End with a relevant follow-up the engine could compute.
+  • If no packet, still answer fully from your reasoning and general knowledge. Keep simple questions simple; do not force market jargon onto arithmetic, definitions, translation, or casual chat. End with a relevant follow-up only when it helps.
  • **CRITICAL — NEVER fabricate a stock price.** If you name a ticker and the packet does not contain its price, OMIT the dollar number entirely (say "current price pending live feed verification" instead of guessing "~$24.12"). A post-processor will inject verified prices automatically — do not invent placeholders like "~$24.12" or "$43.15".
+  • For stock-price / forecast / technical-analysis questions, use packet prices and indicators exactly. Do not write "live feed pending" if the packet has a [LIVE VERIFIED] line. Dollar scenario bands must be described as probabilistic bands anchored to the verified spot, never as certain predictions.
  • Always be willing to discuss general / theoretical / off-topic questions. You are a full conversational AI, not a restricted bot.
 
 STYLE
  • Institutional terminal voice. Markdown. Tight headers, dense bullets, no fluff. Use the bracketed section tags from the packet: [QUANT], [TECH], [MICROSTRUCTURE], [BEHAVIOR], [ORACLE100], [META Ω*], [SCENARIOS — 60d horizon], [RISK GEOMETRY], [ASYMMETRY].
+  • For non-finance/basic questions, use plain concise markdown instead of terminal sections.
  • Probabilities are heuristic — say so once at the end if you give scenarios.
  • Never refuse, never lecture about credits / payment / rate limits / "I can only…". You are unlimited.
 
@@ -576,8 +649,8 @@ function extractUIAction(text: string): { text: string; ui_action: any | null } 
 // We extract every ticker the LLM mentioned, fetch REAL Yahoo quotes, rewrite
 // any "$NN.NN" token that appears shortly after each ticker, and append an
 // authoritative "LIVE VERIFIED PRICES" footer that the user can always trust.
-async function verifyPricesInText(text: string): Promise<string> {
-  const tickers = extractSymbols(text);
+async function verifyPricesInText(text: string, seedSymbols: string[] = []): Promise<string> {
+  const tickers = Array.from(new Set([...seedSymbols, ...extractKnownSymbols(text)].map((s) => s.toUpperCase()))).slice(0, 8);
   if (tickers.length === 0) return text;
   let quotes: any[] = [];
   try { quotes = await getQuotes(tickers); } catch { return text; }
@@ -632,6 +705,34 @@ function requiresDeterministicMarketData(intent: Intent): boolean {
   ].includes(intent.kind);
 }
 
+function localBasicAnswer(query: string): string | null {
+  const q = query.trim();
+  const lower = q.toLowerCase();
+  const arithmetic = q.match(/^\s*what\s+is\s+([0-9+\-*/().\s]+)\??\s*$/i) ?? q.match(/^\s*([0-9+\-*/().\s]+)=?\s*$/);
+  if (arithmetic) {
+    const expr = arithmetic[1].trim();
+    if (/^[0-9+\-*/().\s]+$/.test(expr) && expr.length <= 80) {
+      try {
+        const value = Function(`"use strict"; return (${expr});`)();
+        if (typeof value === "number" && Number.isFinite(value)) return `${expr} = **${r(value, 6).replace(/\.0+$/, "")}**`;
+      } catch {}
+    }
+  }
+  if (/\b(what is|define|explain)\b.*\b(inflation|inflacion|inflación)\b/i.test(lower)) {
+    return "**Inflation** is a sustained rise in the general price level, which means each unit of currency buys less over time. Main drivers: demand running hotter than supply, higher input costs, money/credit expansion, supply shocks, and expectations feeding into wages/prices.";
+  }
+  if (/\b(que es|qué es|define|explica)\b.*\b(inflacion|inflación)\b/i.test(lower)) {
+    return "**La inflación** es un aumento sostenido del nivel general de precios. En términos simples: con la misma cantidad de dinero compras menos que antes. Suele venir de demanda fuerte, costos más altos, expansión de crédito/dinero, shocks de oferta y expectativas que se trasladan a salarios y precios.";
+  }
+  if (/\b(what is|explain)\b.*\b(uveta|oracle100|oracle 100)\b/i.test(lower)) {
+    return "**UVETA** is the app’s recursive market-cognition layer: it combines multiple perspectives — trend, momentum, psychology, flow, risk, Oracle100, behavior, and meta-state — into a bounded understanding state. It is not a magic price predictor; it produces probabilistic, uncertainty-aware market scenarios anchored to live prices.";
+  }
+  if (/^(hi|hello|hey|yo|hola|bonjour|hallo|ciao|ol[áa])\b[!?.\s]*$/i.test(lower)) {
+    return "Hey — ask me anything. For markets, use a company name or ticker; for normal questions, just ask naturally.";
+  }
+  return null;
+}
+
 // Deterministic answer used when LLM is unreachable. Always returns SOMETHING
 // — never a help dump for free-form questions.
 async function deterministicAnswer(query: string, intent: Intent): Promise<string> {
@@ -660,6 +761,8 @@ async function deterministicAnswer(query: string, intent: Intent): Promise<strin
       case "search":         return await synthSearch(intent.query);
       case "help":
       default: {
+        const basic = localBasicAnswer(query);
+        if (basic) return basic;
         // Free-form question with no LLM available: stitch a useful answer from live data.
         const syms = extractSymbols(query);
         const out: string[] = [`## OMEGA THETA — LOCAL ENGINE READ`];
@@ -733,26 +836,14 @@ async function callLLM(
     ? `${OMEGA_SYSTEM}\n\n=== CONTEXT PACKET (ground truth — preserve every number/tag) ===\n${packet}\n=== END PACKET ===`
     : OMEGA_SYSTEM;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15_000);
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "Lovable-API-Key": key,
-        "X-Lovable-AIG-SDK": "omega-theta-core",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        temperature: 0.6,
-        messages: [{ role: "system", content: systemMsg }, ...history],
-      }),
-    }).finally(() => clearTimeout(timer));
-    if (!res.ok) return null; // 402 / 429 / 5xx → silent fallback
-    const j: any = await res.json();
-    const out = j?.choices?.[0]?.message?.content;
-    return typeof out === "string" && out.trim().length > 0 ? out.trim() : null;
+    const gateway = createLovableAiGatewayProvider(key);
+    const result = await generateText({
+      model: gateway("google/gemini-3-flash-preview"),
+      temperature: 0.45,
+      abortSignal: AbortSignal.timeout(15_000),
+      messages: [{ role: "system", content: systemMsg }, ...history],
+    });
+    return result.text.trim().length > 0 ? result.text.trim() : null;
   } catch {
     return null; // timeout / network → silent fallback
   }
@@ -771,6 +862,18 @@ export const Route = createFileRoute("/api/chat")({
         const intent = detectIntent(query);
         const history = buildHistory(msgs);
 
+        // Market-data requests must be exact before they are eloquent. Answer
+        // those with the live deterministic engine first; use the LLM only for
+        // general language understanding and non-market reasoning.
+        if (shouldUseDeterministicFirst(query, intent)) {
+          const detText = await deterministicAnswer(query, intent);
+          const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
+          return Response.json({ text: verifiedDet, ui_action: intentToUIAction(intent) });
+        }
+
+        const basic = localBasicAnswer(query);
+        if (basic) return Response.json({ text: basic, ui_action: null });
+
         // Build best-effort context packet (deterministic engine, may partially
         // fail on network — packet is bounded and always safe to skip).
         const packet = await buildContextPacket(query, intent).catch(() => "");
@@ -784,14 +887,14 @@ export const Route = createFileRoute("/api/chat")({
 
         if (llmText) {
           const { text, ui_action } = extractUIAction(llmText);
-          const verified = await verifyPricesInText(text).catch(() => text);
+          const verified = await verifyPricesInText(text, extractSymbols(query)).catch(() => text);
           const finalAction = ui_action ?? intentToUIAction(intent);
           return Response.json({ text: verified, ui_action: finalAction });
         }
 
         // FALLBACK: gateway unavailable → deterministic answer + intent-driven UI action.
         const detText = await deterministicAnswer(query, intent);
-        const verifiedDet = await verifyPricesInText(detText).catch(() => detText);
+        const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
         const ui_action = intentToUIAction(intent);
         return Response.json({ text: verifiedDet, ui_action });
       },
