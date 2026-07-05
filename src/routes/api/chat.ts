@@ -43,6 +43,9 @@ const STOP = new Set([
   "FEED","GROUND","TRUTH","CONTEXT","PACKET","END","CORE","OMEGA","THETA",
   "QUANT","TECH","MICROSTRUCTURE","BEHAVIOR","SCENARIOS","RISK","ASYMMETRY",
   "PRICELESS","PRICES","PENDING","INJECTION","ANALYZE","SIGNAL","TARGET",
+  "MDD","ROC","ROC10","ROC30","ROC90","BOLLINGER","SHARPE","SORTINO","CALMAR",
+  "LIVE VERIFIED","REGULAR","SESSION","LATEST","OFFICIAL","HISTORICAL","INDICATOR",
+  "UNKNOWN","STABLE","FRAGILE","DIVERGING","CONVERGING","REFLEXIVE","MIXED",
 ]);
 
 const VALID_SYMBOL = /^\$?\^?[A-Z0-9][A-Z0-9.\-=]{0,11}$/;
@@ -132,6 +135,21 @@ function extractSymbols(text: string): string[] {
     out.add(t);
   }
   return Array.from(out).slice(0, 6);
+}
+
+function extractKnownSymbols(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
+    out.add(m[1].toUpperCase());
+  }
+  for (const name of Object.keys(NAME_TO_TICKER)) {
+    if (new RegExp(`\\b${escapeRegex(name)}\\b`, "i").test(text)) out.add(NAME_TO_TICKER[name]);
+  }
+  for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
+    const t = raw.replace(/^\$/, "").toUpperCase();
+    if (COMMON_TICKERS[t]) out.add(COMMON_TICKERS[t]);
+  }
+  return Array.from(out).slice(0, 8);
 }
 
 
