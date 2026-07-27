@@ -653,7 +653,7 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
   const tickers = Array.from(new Set([...seedSymbols, ...extractKnownSymbols(text)].map((s) => s.toUpperCase()))).slice(0, 8);
   if (tickers.length === 0) return text;
   let quotes: any[] = [];
-  try { quotes = await getQuotes(tickers); } catch { return text; }
+  try { quotes = await getQuotes(tickers, { fresh: true }); } catch { return text; }
   const live = new Map<string, { price: number; chg: number | null; name?: string }>();
   for (const q of quotes) {
     const p = qPrice(q);
