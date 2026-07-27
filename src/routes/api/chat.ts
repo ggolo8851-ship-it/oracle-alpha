@@ -869,11 +869,14 @@ async function callLLM(
     ? `${OMEGA_SYSTEM}\n\n=== CONTEXT PACKET (ground truth — preserve every number/tag) ===\n${packet}\n=== END PACKET ===`
     : OMEGA_SYSTEM;
 
-  const drafts = (
-    await Promise.all(ENSEMBLE_MODELS.map((m) => callModel(m, systemMsg, history)))
-  )
-    .map((text, i) => ({ model: ENSEMBLE_MODELS[i], text }))
-    .filter((d): d is { model: string; text: string } => Boolean(d.text));
+  const results = await Promise.all(
+    ENSEMBLE_MODELS.map((m) => callModel(m, systemMsg, history)),
+  );
+  const drafts: { model: string; text: string }[] = [];
+  results.forEach((text, i) => {
+    if (text) drafts.push({ model: ENSEMBLE_MODELS[i], text });
+  });
+
 
   if (drafts.length === 0) return null;
   if (drafts.length === 1) return drafts[0].text;
