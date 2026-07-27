@@ -826,6 +826,39 @@ function buildHistory(msgs: UIMsg[]): { role: "user" | "assistant"; content: str
     .filter((m) => m.content.length > 0);
 }
 
+// ───────────── MULTI-MODEL ENSEMBLE (cross-AI verification) ─────────────
+// Every answer is drafted independently by multiple frontier models
+// (Google Gemini + OpenAI GPT via the Lovable AI Gateway), then a third
+// adjudication pass reconciles them: contradictions are dropped, agreed
+// claims are kept, and every number is re-checked against the live packet.
+// Anthropic Claude is not routable through the gateway, so the ensemble
+// uses the available Google + OpenAI frontier models.
+const ENSEMBLE_MODELS = ["google/gemini-3.6-flash", "openai/gpt-5.4-mini"] as const;
+const ADJUDICATOR_MODEL = "google/gemini-3.6-flash";
+
+async function callModel(
+  model: string,
+  systemMsg: string,
+  history: { role: "user" | "assistant"; content: string }[],
+  timeoutMs = 18_000,
+): Promise<string | null> {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) return null;
+  try {
+    const gateway = createLovableAiGatewayProvider(key);
+    const result = await generateText({
+      model: gateway(model),
+      temperature: 0.35,
+      abortSignal: AbortSignal.timeout(timeoutMs),
+      messages: [{ role: "system", content: systemMsg }, ...history],
+    });
+    const t = result.text.trim();
+    return t.length > 0 ? t : null;
+  } catch {
+    return null; // rate limit / credits / timeout → this model just abstains
+  }
+}
+
 async function callLLM(
   history: { role: "user" | "assistant"; content: string }[],
   packet: string,
@@ -835,19 +868,45 @@ async function callLLM(
   const systemMsg = packet
     ? `${OMEGA_SYSTEM}\n\n=== CONTEXT PACKET (ground truth — preserve every number/tag) ===\n${packet}\n=== END PACKET ===`
     : OMEGA_SYSTEM;
-  try {
-    const gateway = createLovableAiGatewayProvider(key);
-    const result = await generateText({
-      model: gateway("google/gemini-3-flash-preview"),
-      temperature: 0.45,
-      abortSignal: AbortSignal.timeout(15_000),
-      messages: [{ role: "system", content: systemMsg }, ...history],
-    });
-    return result.text.trim().length > 0 ? result.text.trim() : null;
-  } catch {
-    return null; // timeout / network → silent fallback
-  }
+
+  const drafts = (
+    await Promise.all(ENSEMBLE_MODELS.map((m) => callModel(m, systemMsg, history)))
+  )
+    .map((text, i) => ({ model: ENSEMBLE_MODELS[i], text }))
+    .filter((d): d is { model: string; text: string } => Boolean(d.text));
+
+  if (drafts.length === 0) return null;
+  if (drafts.length === 1) return drafts[0].text;
+
+  // Adjudication / consensus pass.
+  const adjSystem = [
+    OMEGA_SYSTEM,
+    ``,
+    `=== CONSENSUS ADJUDICATION MODE ===`,
+    `Independent frontier models each answered the user's last message. Produce ONE final answer that:`,
+    `1. Keeps only claims supported by the CONTEXT PACKET or agreed by both drafts.`,
+    `2. Drops or explicitly flags anything the drafts contradict each other on.`,
+    `3. Uses ONLY packet numbers for prices, levels and stats — never a draft's number that is absent from the packet.`,
+    `4. Preserves the user's language, keeps the strongest reasoning from each draft, and removes duplication.`,
+    `Output only the final answer — never mention drafts, models, or this adjudication process.`,
+    packet ? `\n=== CONTEXT PACKET (ground truth) ===\n${packet}\n=== END PACKET ===` : ``,
+  ].join("\n");
+
+  const adjHistory: { role: "user" | "assistant"; content: string }[] = [
+    ...history,
+    {
+      role: "user",
+      content: drafts
+        .map((d, i) => `--- DRAFT ${i + 1} ---\n${d.text}`)
+        .join("\n\n") + `\n\n--- END DRAFTS ---\nReturn the single reconciled, fully accurate final answer.`,
+    },
+  ];
+
+  const merged = await callModel(ADJUDICATOR_MODEL, adjSystem, adjHistory, 20_000);
+  // If adjudication fails, fall back to the longest (most complete) draft.
+  return merged ?? drafts.slice().sort((a, b) => b.text.length - a.text.length)[0].text;
 }
+
 
 export const Route = createFileRoute("/api/chat")({
   server: {
