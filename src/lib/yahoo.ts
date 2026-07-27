@@ -204,9 +204,19 @@ async function fetchQuoteBatch(symbols: string[]): Promise<Quote[]> {
   return cleanSymbols.map((s) => bySym.get(s)).filter((q): q is Quote => Boolean(q));
 }
 
-export async function getQuotes(symbols: string[]): Promise<Quote[]> {
+/** Drop cached quote/meta entries so the next read hits Yahoo live. */
+export function invalidateQuotes(symbols: string[]) {
+  for (const raw of symbols) {
+    const s = raw.trim().toUpperCase();
+    _cache.delete(`quote:${s}`);
+    _cache.delete(`meta:${s}`);
+  }
+}
+
+export async function getQuotes(symbols: string[], opts: { fresh?: boolean } = {}): Promise<Quote[]> {
   if (!symbols.length) return [];
   const unique = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+  if (opts.fresh) invalidateQuotes(unique);
   const batch = await fetchQuoteBatch(unique).catch(() => []);
   const bySym = new Map(batch.map((q) => [q.symbol, q]));
   const missing = unique.filter((s) => !bySym.has(s));
@@ -226,6 +236,7 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
   const finalMap = new Map(out.map((q) => [q.symbol, q]));
   return unique.map((s) => finalMap.get(s)).filter((q): q is Quote => Boolean(q));
 }
+
 
 export type Bar = { t: number; o: number|null; h: number|null; l: number|null; c: number|null; v: number|null };
 
