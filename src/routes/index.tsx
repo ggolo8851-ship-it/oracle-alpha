@@ -95,13 +95,45 @@ function Index() {
   // Let the AI control the terminal via ui_* tools.
   useEffect(() => {
     const onUI = (e: Event) => {
-      const d = (e as CustomEvent).detail as { ui_action: string; symbol?: string; tab?: Tab; thresholdPct?: number };
+      const d = (e as CustomEvent).detail as {
+        ui_action: string; symbol?: string; tab?: Tab; thresholdPct?: number;
+        targetPrice?: number; targetPct?: number; stopPct?: number; horizonHours?: number; note?: string;
+      };
       switch (d.ui_action) {
         case "add_to_bag":
-          if (d.symbol) addWatch(d.symbol, undefined);
+          if (d.symbol) {
+            addWatch(d.symbol, undefined);
+            if (d.thresholdPct) updateWatch(d.symbol, { thresholdPct: d.thresholdPct });
+            toast.success(`Pinned ${d.symbol.toUpperCase()} to the Bag`, { description: "Live alerts armed." });
+          }
           break;
         case "remove_from_bag":
           if (d.symbol) removeWatch(d.symbol);
+          break;
+        case "track_prediction":
+          if (d.symbol) {
+            addWatch(d.symbol, undefined);
+            fetch(`/api/snapshot?symbols=${encodeURIComponent(d.symbol)}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((j) => {
+                const q = ((j?.quotes ?? j ?? []) as any[]).find((x) => x?.symbol === d.symbol!.toUpperCase());
+                addPrediction({
+                  symbol: d.symbol!,
+                  spot: q?.regularMarketPrice,
+                  targetPrice: d.targetPrice,
+                  targetPct: d.targetPct,
+                  stopPct: d.stopPct ?? 2,
+                  horizonHours: d.horizonHours ?? 24,
+                  note: d.note,
+                });
+                toast(`Tracking call · ${d.symbol!.toUpperCase()}`, {
+                  description: `You'll be notified when it hits target, stops out, or expires.`,
+                });
+              })
+              .catch(() => {
+                addPrediction({ symbol: d.symbol!, targetPrice: d.targetPrice, targetPct: d.targetPct, stopPct: d.stopPct ?? 2, horizonHours: d.horizonHours ?? 24, note: d.note });
+              });
+          }
           break;
         case "open_ticker":
           if (d.symbol) setActiveSymbol(d.symbol);
