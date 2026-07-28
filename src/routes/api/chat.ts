@@ -170,8 +170,8 @@ type Intent =
   | { kind: "region_sector"; group: "region" | "sector"; key: string }
   | { kind: "search"; query: string }
   | { kind: "ticker"; symbols: string[]; deep: boolean }
-  | { kind: "ui_add_bag"; symbol: string }
-  | { kind: "ui_remove_bag"; symbol: string }
+  | { kind: "ui_add_bag"; symbol: string; symbols: string[] }
+  | { kind: "ui_remove_bag"; symbol: string; symbols: string[] }
   | { kind: "ui_simulate"; symbol: string }
   | { kind: "ui_open"; symbol: string }
   | { kind: "ui_switch_tab"; tab: Tab }
@@ -184,8 +184,8 @@ function detectIntent(raw: string): Intent {
   const sym = symbols[0];
 
   // UI actions
-  if (sym && /\b(add|pin|put|stick|throw)\b.*\b(bag|watch|watchlist)\b/.test(lower)) return { kind: "ui_add_bag", symbol: sym };
-  if (sym && /\b(remove|unpin|drop|delete)\b.*\b(bag|watch)\b/.test(lower)) return { kind: "ui_remove_bag", symbol: sym };
+  if (sym && /\b(add|pin|put|stick|throw|track|watch)\b[\s\S]*\b(bag|watch|watchlist|list)\b/.test(lower)) return { kind: "ui_add_bag", symbol: sym, symbols };
+  if (sym && /\b(remove|unpin|drop|delete)\b[\s\S]*\b(bag|watch)\b/.test(lower)) return { kind: "ui_remove_bag", symbol: sym, symbols };
   if (sym && /\b(simulate|simulation|scenario|monte\s*carlo|project)\b/.test(lower)) return { kind: "ui_simulate", symbol: sym };
   if (sym && /\b(open|show|drawer|details?)\b/.test(lower) && symbols.length === 1 && text.length < 40) return { kind: "ui_open", symbol: sym };
 
