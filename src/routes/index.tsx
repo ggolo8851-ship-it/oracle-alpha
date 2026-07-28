@@ -16,7 +16,8 @@ import { Watchlist } from "@/components/Watchlist";
 import { WatchAlerts } from "@/components/WatchAlerts";
 import { StockSimulation } from "@/components/StockSimulation";
 import { PrivateEquity } from "@/components/PrivateEquity";
-import { addWatch, removeWatch } from "@/lib/watchlist";
+import { addWatch, removeWatch, updateWatch, addPrediction } from "@/lib/watchlist";
+import { toast } from "sonner";
 import {
   getActiveId,
   getThread,
