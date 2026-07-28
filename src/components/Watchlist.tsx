@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { listWatch, removeWatch, updateWatch, type WatchItem } from "@/lib/watchlist";
+import {
+  listWatch, removeWatch, updateWatch, type WatchItem,
+  listPredictions, removePrediction, predTarget, type Prediction,
+} from "@/lib/watchlist";
 
 export function Watchlist({
   onPick,
@@ -9,13 +12,21 @@ export function Watchlist({
   onSimulate: (s: string) => void;
 }) {
   const [items, setItems] = useState<WatchItem[]>([]);
+  const [preds, setPreds] = useState<Prediction[]>([]);
   const [quotes, setQuotes] = useState<Record<string, { price: number; chg: number }>>({});
 
   useEffect(() => {
     const refresh = () => setItems(listWatch());
-    refresh();
+    const refreshP = () => setPreds(listPredictions());
+    refresh(); refreshP();
     window.addEventListener("anomaly:watchlist-change", refresh);
-    return () => window.removeEventListener("anomaly:watchlist-change", refresh);
+    window.addEventListener("anomaly:predictions-change", refreshP);
+    const id = setInterval(refreshP, 20_000);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("anomaly:watchlist-change", refresh);
+      window.removeEventListener("anomaly:predictions-change", refreshP);
+    };
   }, []);
 
   useEffect(() => {
