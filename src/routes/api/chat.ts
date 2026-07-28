@@ -633,17 +633,18 @@ async function buildContextPacket(query: string, intent: Intent): Promise<string
 }
 
 // Parse and strip a ```ui_action {json}``` block emitted by the model.
-function extractUIAction(text: string): { text: string; ui_action: any | null } {
-  const re = /```ui_action\s*([\s\S]*?)```/i;
-  const m = text.match(re);
-  if (!m) return { text, ui_action: null };
-  try {
-    const parsed = JSON.parse(m[1].trim());
-    const cleaned = text.replace(re, "").trim();
-    return { text: cleaned, ui_action: parsed };
-  } catch {
-    return { text: text.replace(re, "").trim(), ui_action: null };
+function extractUIAction(text: string): { text: string; ui_actions: any[] } {
+  const re = /```ui_action\s*([\s\S]*?)```/gi;
+  const actions: any[] = [];
+  let cleaned = text;
+  for (const m of text.matchAll(re)) {
+    try {
+      const parsed = JSON.parse(m[1].trim());
+      for (const a of (Array.isArray(parsed) ? parsed : [parsed])) if (a?.ui_action) actions.push(a);
+    } catch { /* ignore malformed block */ }
   }
+  cleaned = text.replace(re, "").trim();
+  return { text: cleaned, ui_actions: actions };
 }
 
 // POST-LLM PRICE VERIFIER. The model sometimes invents placeholder prices
