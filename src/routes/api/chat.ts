@@ -937,11 +937,12 @@ export const Route = createFileRoute("/api/chat")({
         if (shouldUseDeterministicFirst(query, intent)) {
           const detText = await deterministicAnswer(query, intent);
           const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
-          return Response.json({ text: verifiedDet, ui_action: intentToUIAction(intent) });
+          const acts = intentToUIAction(intent);
+          return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
         }
 
         const basic = localBasicAnswer(query);
-        if (basic) return Response.json({ text: basic, ui_action: null });
+        if (basic) return Response.json({ text: basic, ui_action: null, ui_actions: [] });
 
         // Build best-effort context packet (deterministic engine, may partially
         // fail on network — packet is bounded and always safe to skip).
@@ -955,17 +956,17 @@ export const Route = createFileRoute("/api/chat")({
         const llmText = await callLLM(history, packet);
 
         if (llmText) {
-          const { text, ui_action } = extractUIAction(llmText);
+          const { text, ui_actions } = extractUIAction(llmText);
           const verified = await verifyPricesInText(text, extractSymbols(query)).catch(() => text);
-          const finalAction = ui_action ?? intentToUIAction(intent);
-          return Response.json({ text: verified, ui_action: finalAction });
+          const acts = ui_actions.length ? ui_actions : intentToUIAction(intent);
+          return Response.json({ text: verified, ui_action: acts[0] ?? null, ui_actions: acts });
         }
 
         // FALLBACK: gateway unavailable → deterministic answer + intent-driven UI action.
         const detText = await deterministicAnswer(query, intent);
         const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
-        const ui_action = intentToUIAction(intent);
-        return Response.json({ text: verifiedDet, ui_action });
+        const acts = intentToUIAction(intent);
+        return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
       },
     },
   },
