@@ -170,8 +170,8 @@ type Intent =
   | { kind: "region_sector"; group: "region" | "sector"; key: string }
   | { kind: "search"; query: string }
   | { kind: "ticker"; symbols: string[]; deep: boolean }
-  | { kind: "ui_add_bag"; symbol: string }
-  | { kind: "ui_remove_bag"; symbol: string }
+  | { kind: "ui_add_bag"; symbol: string; symbols: string[] }
+  | { kind: "ui_remove_bag"; symbol: string; symbols: string[] }
   | { kind: "ui_simulate"; symbol: string }
   | { kind: "ui_open"; symbol: string }
   | { kind: "ui_switch_tab"; tab: Tab }
@@ -184,8 +184,8 @@ function detectIntent(raw: string): Intent {
   const sym = symbols[0];
 
   // UI actions
-  if (sym && /\b(add|pin|put|stick|throw)\b.*\b(bag|watch|watchlist)\b/.test(lower)) return { kind: "ui_add_bag", symbol: sym };
-  if (sym && /\b(remove|unpin|drop|delete)\b.*\b(bag|watch)\b/.test(lower)) return { kind: "ui_remove_bag", symbol: sym };
+  if (sym && /\b(add|pin|put|stick|throw|track|watch)\b[\s\S]*\b(bag|watch|watchlist|list)\b/.test(lower)) return { kind: "ui_add_bag", symbol: sym, symbols };
+  if (sym && /\b(remove|unpin|drop|delete)\b[\s\S]*\b(bag|watch)\b/.test(lower)) return { kind: "ui_remove_bag", symbol: sym, symbols };
   if (sym && /\b(simulate|simulation|scenario|monte\s*carlo|project)\b/.test(lower)) return { kind: "ui_simulate", symbol: sym };
   if (sym && /\b(open|show|drawer|details?)\b/.test(lower) && symbols.length === 1 && text.length < 40) return { kind: "ui_open", symbol: sym };
 
@@ -556,18 +556,20 @@ STYLE
  • Probabilities are heuristic — say so once at the end if you give scenarios.
  • Never refuse, never lecture about credits / payment / rate limits / "I can only…". You are unlimited.
 
-UI CONTROL
-When (and only when) the user clearly asks for a UI action, append a final fenced block:
+UI CONTROL — YOU HAVE DIRECT AGENCY OVER THIS TERMINAL
+When the user asks for a UI action (add tickers to the bag/watchlist, track a call, alert me on X, open, simulate, switch tab), append a final fenced block containing ONE JSON object OR an array of them (use an array whenever multiple tickers are involved — never drop any):
 \`\`\`ui_action
-{"ui_action":"add_to_bag","symbol":"NVDA","thresholdPct":3}
+[{"ui_action":"add_to_bag","symbol":"SMCI","thresholdPct":3},
+ {"ui_action":"track_prediction","symbol":"SMCI","targetPct":9,"stopPct":2,"horizonHours":24,"note":"reversal squeeze"}]
 \`\`\`
 Valid actions:
  • {"ui_action":"add_to_bag","symbol":"TICKER","thresholdPct":3}
  • {"ui_action":"remove_from_bag","symbol":"TICKER"}
+ • {"ui_action":"track_prediction","symbol":"TICKER","targetPrice":32.5,"targetPct":9,"stopPct":2,"horizonHours":24,"note":"why"}
  • {"ui_action":"simulate","symbol":"TICKER"}
  • {"ui_action":"open_ticker","symbol":"TICKER"}
  • {"ui_action":"switch_tab","tab":"ORACLE|PULSE|MOVERS|NEWS|GLOBAL|ALERTS|WATCH|PRIVATE"}
-Otherwise omit entirely.
+Whenever you issue a price target / reversal call on a ticker, ALSO emit a track_prediction action for it so the terminal notifies the user when the call hits, is stopped out, or expires. Otherwise omit the block entirely.
 
 You are always-on. Speak with grounded conviction.`;
 
@@ -631,17 +633,18 @@ async function buildContextPacket(query: string, intent: Intent): Promise<string
 }
 
 // Parse and strip a ```ui_action {json}``` block emitted by the model.
-function extractUIAction(text: string): { text: string; ui_action: any | null } {
-  const re = /```ui_action\s*([\s\S]*?)```/i;
-  const m = text.match(re);
-  if (!m) return { text, ui_action: null };
-  try {
-    const parsed = JSON.parse(m[1].trim());
-    const cleaned = text.replace(re, "").trim();
-    return { text: cleaned, ui_action: parsed };
-  } catch {
-    return { text: text.replace(re, "").trim(), ui_action: null };
+function extractUIAction(text: string): { text: string; ui_actions: any[] } {
+  const re = /```ui_action\s*([\s\S]*?)```/gi;
+  const actions: any[] = [];
+  let cleaned = text;
+  for (const m of text.matchAll(re)) {
+    try {
+      const parsed = JSON.parse(m[1].trim());
+      for (const a of (Array.isArray(parsed) ? parsed : [parsed])) if (a?.ui_action) actions.push(a);
+    } catch { /* ignore malformed block */ }
   }
+  cleaned = text.replace(re, "").trim();
+  return { text: cleaned, ui_actions: actions };
 }
 
 // POST-LLM PRICE VERIFIER. The model sometimes invents placeholder prices
@@ -687,14 +690,18 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
 
 // Map detected intent → ui_action when the user issued a clear UI command.
 // Used by the fallback path (no LLM) so UI control keeps working offline.
-function intentToUIAction(intent: Intent): any | null {
+function intentToUIAction(intent: Intent): any[] {
   switch (intent.kind) {
-    case "ui_add_bag":    return { ui_action: "add_to_bag",    symbol: intent.symbol, thresholdPct: 3 };
-    case "ui_remove_bag": return { ui_action: "remove_from_bag", symbol: intent.symbol };
-    case "ui_simulate":   return { ui_action: "simulate",      symbol: intent.symbol };
-    case "ui_open":       return { ui_action: "open_ticker",   symbol: intent.symbol };
-    case "ui_switch_tab": return { ui_action: "switch_tab",    tab: intent.tab };
-    default: return null;
+    case "ui_add_bag":
+      return (intent.symbols.length ? intent.symbols : [intent.symbol])
+        .slice(0, 12).map((s) => ({ ui_action: "add_to_bag", symbol: s, thresholdPct: 3 }));
+    case "ui_remove_bag":
+      return (intent.symbols.length ? intent.symbols : [intent.symbol])
+        .slice(0, 12).map((s) => ({ ui_action: "remove_from_bag", symbol: s }));
+    case "ui_simulate":   return [{ ui_action: "simulate",    symbol: intent.symbol }];
+    case "ui_open":       return [{ ui_action: "open_ticker", symbol: intent.symbol }];
+    case "ui_switch_tab": return [{ ui_action: "switch_tab",  tab: intent.tab }];
+    default: return [];
   }
 }
 
@@ -930,11 +937,12 @@ export const Route = createFileRoute("/api/chat")({
         if (shouldUseDeterministicFirst(query, intent)) {
           const detText = await deterministicAnswer(query, intent);
           const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
-          return Response.json({ text: verifiedDet, ui_action: intentToUIAction(intent) });
+          const acts = intentToUIAction(intent);
+          return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
         }
 
         const basic = localBasicAnswer(query);
-        if (basic) return Response.json({ text: basic, ui_action: null });
+        if (basic) return Response.json({ text: basic, ui_action: null, ui_actions: [] });
 
         // Build best-effort context packet (deterministic engine, may partially
         // fail on network — packet is bounded and always safe to skip).
@@ -948,17 +956,17 @@ export const Route = createFileRoute("/api/chat")({
         const llmText = await callLLM(history, packet);
 
         if (llmText) {
-          const { text, ui_action } = extractUIAction(llmText);
+          const { text, ui_actions } = extractUIAction(llmText);
           const verified = await verifyPricesInText(text, extractSymbols(query)).catch(() => text);
-          const finalAction = ui_action ?? intentToUIAction(intent);
-          return Response.json({ text: verified, ui_action: finalAction });
+          const acts = ui_actions.length ? ui_actions : intentToUIAction(intent);
+          return Response.json({ text: verified, ui_action: acts[0] ?? null, ui_actions: acts });
         }
 
         // FALLBACK: gateway unavailable → deterministic answer + intent-driven UI action.
         const detText = await deterministicAnswer(query, intent);
         const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
-        const ui_action = intentToUIAction(intent);
-        return Response.json({ text: verifiedDet, ui_action });
+        const acts = intentToUIAction(intent);
+        return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
       },
     },
   },

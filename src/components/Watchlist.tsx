@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { listWatch, removeWatch, updateWatch, type WatchItem } from "@/lib/watchlist";
+import {
+  listWatch, removeWatch, updateWatch, type WatchItem,
+  listPredictions, removePrediction, predTarget, type Prediction,
+} from "@/lib/watchlist";
 
 export function Watchlist({
   onPick,
@@ -9,13 +12,21 @@ export function Watchlist({
   onSimulate: (s: string) => void;
 }) {
   const [items, setItems] = useState<WatchItem[]>([]);
+  const [preds, setPreds] = useState<Prediction[]>([]);
   const [quotes, setQuotes] = useState<Record<string, { price: number; chg: number }>>({});
 
   useEffect(() => {
     const refresh = () => setItems(listWatch());
-    refresh();
+    const refreshP = () => setPreds(listPredictions());
+    refresh(); refreshP();
     window.addEventListener("anomaly:watchlist-change", refresh);
-    return () => window.removeEventListener("anomaly:watchlist-change", refresh);
+    window.addEventListener("anomaly:predictions-change", refreshP);
+    const id = setInterval(refreshP, 20_000);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("anomaly:watchlist-change", refresh);
+      window.removeEventListener("anomaly:predictions-change", refreshP);
+    };
   }, []);
 
   useEffect(() => {
@@ -103,6 +114,48 @@ export function Watchlist({
                     vol
                   </label>
                 </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="font-mono text-[10px] tracking-[0.25em] text-muted-foreground mt-4 mb-2">
+        ▸ TRACKED CALLS ({preds.filter(p => p.status === "live").length} live)
+      </div>
+      {preds.length === 0 ? (
+        <div className="bg-card border border-border p-3 font-mono text-[10px] text-muted-foreground">
+          No tracked predictions. Ask Oracle <span className="text-accent">"track your SMCI call and notify me"</span> — it pins the target, stop and horizon, then alerts you when it hits, stops out, or expires.
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {preds.slice(0, 25).map((p) => {
+            const q = quotes[p.symbol];
+            const tgt = predTarget(p, q?.price);
+            const base = p.spot ?? q?.price;
+            const prog = tgt != null && base != null && q ? Math.max(0, Math.min(100, ((q.price - base) / (tgt - base)) * 100)) : null;
+            const color = p.status === "hit" ? "text-bull" : p.status === "stopped" ? "text-bear" : p.status === "expired" ? "text-muted-foreground" : "text-accent";
+            return (
+              <div key={p.id} className="bg-card border border-border p-2 font-mono text-[10px]">
+                <div className="flex items-center justify-between">
+                  <button onClick={() => onPick(p.symbol)} className="text-primary font-bold tracking-wide hover:underline text-xs">{p.symbol}</button>
+                  <div className="flex items-center gap-2">
+                    <span className={color}>{p.status.toUpperCase()}</span>
+                    <button onClick={() => removePrediction(p.id)} className="text-muted-foreground hover:text-destructive">✕</button>
+                  </div>
+                </div>
+                <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3">
+                  <span>entry ${base?.toFixed(2) ?? "—"}</span>
+                  <span>target ${tgt?.toFixed(2) ?? "—"}</span>
+                  {p.stopPct != null && <span>stop −{p.stopPct}%</span>}
+                  <span>{p.horizonHours}h</span>
+                </div>
+                {prog != null && p.status === "live" && (
+                  <div className="h-1 bg-secondary mt-1.5">
+                    <div className="h-full bg-accent" style={{ width: `${prog}%` }} />
+                  </div>
+                )}
+                {p.note && <div className="text-muted-foreground mt-1 italic">{p.note}</div>}
               </div>
             );
           })}

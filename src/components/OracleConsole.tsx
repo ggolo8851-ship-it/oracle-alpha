@@ -69,9 +69,10 @@ export const OracleConsole = forwardRef<OracleHandle, {
         body: JSON.stringify({ messages: next }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { text?: string; ui_action?: any };
-      if (data.ui_action?.ui_action) {
-        window.dispatchEvent(new CustomEvent("anomaly:ui-action", { detail: data.ui_action }));
+      const data = (await res.json()) as { text?: string; ui_action?: any; ui_actions?: any[] };
+      const actions = (data.ui_actions?.length ? data.ui_actions : data.ui_action ? [data.ui_action] : []) as any[];
+      for (const a of actions) {
+        if (a?.ui_action) window.dispatchEvent(new CustomEvent("anomaly:ui-action", { detail: a }));
       }
       const aMsg: UIMessage = {
         id: uid(),
