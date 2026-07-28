@@ -690,14 +690,18 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
 
 // Map detected intent → ui_action when the user issued a clear UI command.
 // Used by the fallback path (no LLM) so UI control keeps working offline.
-function intentToUIAction(intent: Intent): any | null {
+function intentToUIAction(intent: Intent): any[] {
   switch (intent.kind) {
-    case "ui_add_bag":    return { ui_action: "add_to_bag",    symbol: intent.symbol, thresholdPct: 3 };
-    case "ui_remove_bag": return { ui_action: "remove_from_bag", symbol: intent.symbol };
-    case "ui_simulate":   return { ui_action: "simulate",      symbol: intent.symbol };
-    case "ui_open":       return { ui_action: "open_ticker",   symbol: intent.symbol };
-    case "ui_switch_tab": return { ui_action: "switch_tab",    tab: intent.tab };
-    default: return null;
+    case "ui_add_bag":
+      return (intent.symbols.length ? intent.symbols : [intent.symbol])
+        .slice(0, 12).map((s) => ({ ui_action: "add_to_bag", symbol: s, thresholdPct: 3 }));
+    case "ui_remove_bag":
+      return (intent.symbols.length ? intent.symbols : [intent.symbol])
+        .slice(0, 12).map((s) => ({ ui_action: "remove_from_bag", symbol: s }));
+    case "ui_simulate":   return [{ ui_action: "simulate",    symbol: intent.symbol }];
+    case "ui_open":       return [{ ui_action: "open_ticker", symbol: intent.symbol }];
+    case "ui_switch_tab": return [{ ui_action: "switch_tab",  tab: intent.tab }];
+    default: return [];
   }
 }
 
