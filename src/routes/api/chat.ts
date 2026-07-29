@@ -106,6 +106,9 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function extractSymbols(text: string): string[] {
   const out = new Set<string>();
   const hasFinanceCue = FINANCE_CUE.test(text) || /\$[A-Za-z]/.test(text);
+  // If the whole message is shouted, ALL-CAPS carries no ticker signal.
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  const shouted = letters.length > 0 && letters === letters.toUpperCase();
   // 1) Explicit $TICKER tokens — always honored.
   for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
     out.add(m[1].toUpperCase());
@@ -115,20 +118,18 @@ function extractSymbols(text: string): string[] {
     const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
     if (re.test(text) && (hasFinanceCue || !AMBIGUOUS_COMPANY_NAMES.has(name))) out.add(NAME_TO_TICKER[name]);
   }
-  // 3) Known tickers can be lower/upper-case when the user is clearly asking
-  //    about markets; unambiguous tickers like "nvda" are honored even in short
-  //    casual prompts. Unknown bare symbols still require ALL-CAPS + finance cue.
+  // 3) Bare tokens are ONLY read as tickers when the sentence is clearly about
+  //    markets ($, finance cue) or the token is written in caps inside a normal
+  //    sentence. Plain conversation never gets parsed into symbols.
   for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
     if (!raw) continue;
     const stripped = raw.replace(/^\$/, "");
     const t = stripped.toUpperCase();
-    const sourceUpper = stripped === stripped.toUpperCase() && /[A-Z]/.test(stripped);
+    const sourceUpper = !shouted && stripped === stripped.toUpperCase() && /[A-Z]/.test(stripped);
+    const explicit = raw.startsWith("$");
     const known = COMMON_TICKERS[t];
     if (known) {
-      const explicit = raw.startsWith("$");
-      const safeLower = stripped.length >= 3 && !AMBIGUOUS_LOWER_TICKERS.has(t);
-      const ambiguous = AMBIGUOUS_LOWER_TICKERS.has(t);
-      if (explicit || (ambiguous ? hasFinanceCue : sourceUpper || hasFinanceCue || safeLower)) out.add(known);
+      if (explicit || hasFinanceCue || sourceUpper) out.add(known);
       continue;
     }
     if (!hasFinanceCue || !sourceUpper) continue;
@@ -142,6 +143,7 @@ function extractSymbols(text: string): string[] {
   }
   return Array.from(out).slice(0, 6);
 }
+
 
 function extractKnownSymbols(text: string): string[] {
   const out = new Set<string>();
