@@ -250,15 +250,13 @@ const asFinite = (n: unknown): number | null =>
 
 const isUIIntent = (intent: Intent) => intent.kind.startsWith("ui_");
 
-function shouldUseDeterministicFirst(query: string, intent: Intent): boolean {
-  if (isUIIntent(intent)) return true;
-  if (intent.kind === "ticker" || intent.kind === "snapshot" || intent.kind === "top_finds" ||
-      intent.kind === "next_big" || intent.kind === "region_sector" || intent.kind === "fear_greed" ||
-      intent.kind === "pulse" || intent.kind === "private_equity") return true;
-  const lower = query.toLowerCase();
-  return extractSymbols(query).length > 0 &&
-    /\b(price|prices|quote|stock|stocks|share|shares|forecast|predict|prediction|target|analysis|analy[sz]e|buy|sell|hold|chart|rsi|macd|precio|precios|株価|股价)\b/i.test(lower);
+// The LLM answers everything conversationally, grounded in the live packet.
+// Only direct terminal commands ("add NVDA to bag", "switch to PULSE") bypass
+// it, because those are actions, not questions.
+function shouldUseDeterministicFirst(_query: string, intent: Intent): boolean {
+  return isUIIntent(intent);
 }
+
 
 function isPlainHelpAnswer(query: string, answer: string): boolean {
   if (query.trim().length > 0) return false;
