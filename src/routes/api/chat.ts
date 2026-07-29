@@ -931,15 +931,15 @@ export const Route = createFileRoute("/api/chat")({
         const intent = detectIntent(query);
         const history = buildHistory(msgs);
 
-        // Market-data requests must be exact before they are eloquent. Answer
-        // those with the live deterministic engine first; use the LLM only for
-        // general language understanding and non-market reasoning.
+        // Direct terminal commands execute immediately; everything else is a
+        // conversation and goes to the language layer (grounded in live data).
         if (shouldUseDeterministicFirst(query, intent)) {
           const detText = await deterministicAnswer(query, intent);
           const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
           const acts = intentToUIAction(intent);
           return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
         }
+
 
         const basic = localBasicAnswer(query);
         if (basic) return Response.json({ text: basic, ui_action: null, ui_actions: [] });
