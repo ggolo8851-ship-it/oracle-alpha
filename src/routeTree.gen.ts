@@ -20,7 +20,6 @@ import { Route as ApiPulseRouteImport } from './routes/api/pulse'
 import { Route as ApiPrivateEquityRouteImport } from './routes/api/private-equity'
 import { Route as ApiNextBigRouteImport } from './routes/api/next-big'
 import { Route as ApiNewsRouteImport } from './routes/api/news'
-import { Route as ApiDbgRouteImport } from './routes/api/dbg'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiAlertsRouteImport } from './routes/api/alerts'
 
@@ -79,11 +78,6 @@ const ApiNewsRoute = ApiNewsRouteImport.update({
   path: '/api/news',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiDbgRoute = ApiDbgRouteImport.update({
-  id: '/api/dbg',
-  path: '/api/dbg',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
@@ -99,7 +93,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/alerts': typeof ApiAlertsRoute
   '/api/chat': typeof ApiChatRoute
-  '/api/dbg': typeof ApiDbgRoute
   '/api/news': typeof ApiNewsRoute
   '/api/next-big': typeof ApiNextBigRoute
   '/api/private-equity': typeof ApiPrivateEquityRoute
@@ -115,7 +108,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/alerts': typeof ApiAlertsRoute
   '/api/chat': typeof ApiChatRoute
-  '/api/dbg': typeof ApiDbgRoute
   '/api/news': typeof ApiNewsRoute
   '/api/next-big': typeof ApiNextBigRoute
   '/api/private-equity': typeof ApiPrivateEquityRoute
@@ -132,7 +124,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/api/alerts': typeof ApiAlertsRoute
   '/api/chat': typeof ApiChatRoute
-  '/api/dbg': typeof ApiDbgRoute
   '/api/news': typeof ApiNewsRoute
   '/api/next-big': typeof ApiNextBigRoute
   '/api/private-equity': typeof ApiPrivateEquityRoute
@@ -150,7 +141,6 @@ export interface FileRouteTypes {
     | '/'
     | '/api/alerts'
     | '/api/chat'
-    | '/api/dbg'
     | '/api/news'
     | '/api/next-big'
     | '/api/private-equity'
@@ -166,7 +156,6 @@ export interface FileRouteTypes {
     | '/'
     | '/api/alerts'
     | '/api/chat'
-    | '/api/dbg'
     | '/api/news'
     | '/api/next-big'
     | '/api/private-equity'
@@ -182,7 +171,6 @@ export interface FileRouteTypes {
     | '/'
     | '/api/alerts'
     | '/api/chat'
-    | '/api/dbg'
     | '/api/news'
     | '/api/next-big'
     | '/api/private-equity'
@@ -199,7 +187,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiAlertsRoute: typeof ApiAlertsRoute
   ApiChatRoute: typeof ApiChatRoute
-  ApiDbgRoute: typeof ApiDbgRoute
   ApiNewsRoute: typeof ApiNewsRoute
   ApiNextBigRoute: typeof ApiNextBigRoute
   ApiPrivateEquityRoute: typeof ApiPrivateEquityRoute
@@ -291,13 +278,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiNewsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/dbg': {
-      id: '/api/dbg'
-      path: '/api/dbg'
-      fullPath: '/api/dbg'
-      preLoaderRoute: typeof ApiDbgRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -319,7 +299,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiAlertsRoute: ApiAlertsRoute,
   ApiChatRoute: ApiChatRoute,
-  ApiDbgRoute: ApiDbgRoute,
   ApiNewsRoute: ApiNewsRoute,
   ApiNextBigRoute: ApiNextBigRoute,
   ApiPrivateEquityRoute: ApiPrivateEquityRoute,
@@ -334,3 +313,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
