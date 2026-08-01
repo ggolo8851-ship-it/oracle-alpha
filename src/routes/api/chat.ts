@@ -154,9 +154,16 @@ function extractKnownSymbols(text: string): string[] {
     if (new RegExp(`\\b${escapeRegex(name)}\\b`, "i").test(text) && !AMBIGUOUS_COMPANY_NAMES.has(name)) out.add(NAME_TO_TICKER[name]);
   }
   for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
-    const t = raw.replace(/^\$/, "").toUpperCase();
-    if (COMMON_TICKERS[t]) out.add(COMMON_TICKERS[t]);
+    const dollar = raw.startsWith("$");
+    const bare = raw.replace(/^\$/, "");
+    const t = bare.toUpperCase();
+    if (!COMMON_TICKERS[t]) continue;
+    // "right now", "all", "can" etc. are English words, not tickers — only
+    // accept ambiguous tokens when explicitly written as a ticker ($NOW / NOW).
+    if (AMBIGUOUS_LOWER_TICKERS.has(t) && !dollar && bare !== t) continue;
+    out.add(COMMON_TICKERS[t]);
   }
+
   return Array.from(out).slice(0, 8);
 }
 
