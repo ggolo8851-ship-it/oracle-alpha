@@ -111,7 +111,9 @@ function extractSymbols(text: string): string[] {
   const shouted = letters.length > 0 && letters === letters.toUpperCase();
   // 1) Explicit $TICKER tokens — always honored.
   for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
-    out.add(m[1].toUpperCase());
+    const t = m[1].toUpperCase();
+    if (!/[A-Z^]/.test(t)) continue; // dollar amounts are not tickers
+    out.add(t);
   }
   // 2) Company-name aliases — case-insensitive whole-word match.
   for (const name of Object.keys(NAME_TO_TICKER)) {
@@ -129,9 +131,13 @@ function extractSymbols(text: string): string[] {
     const explicit = raw.startsWith("$");
     const known = COMMON_TICKERS[t];
     if (known) {
-      if (explicit || hasFinanceCue || sourceUpper) out.add(known);
+      // Ambiguous English words (now, all, can, on, live…) only count as
+      // tickers when written as one explicitly: "$NOW" or caps "NOW".
+      const ambiguousWord = AMBIGUOUS_LOWER_TICKERS.has(t) && !explicit && !sourceUpper;
+      if (!ambiguousWord && (explicit || hasFinanceCue || sourceUpper)) out.add(known);
       continue;
     }
+
     if (!hasFinanceCue || !sourceUpper) continue;
     if (stripped.length < 2 || stripped.length > 12) continue;
     if (!VALID_SYMBOL.test(t)) continue;
@@ -148,15 +154,25 @@ function extractSymbols(text: string): string[] {
 function extractKnownSymbols(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
-    out.add(m[1].toUpperCase());
+    const t = m[1].toUpperCase();
+    // "$1.2B", "$198.98" are dollar figures, not tickers.
+    if (!/[A-Z^]/.test(t)) continue;
+    out.add(t);
   }
   for (const name of Object.keys(NAME_TO_TICKER)) {
     if (new RegExp(`\\b${escapeRegex(name)}\\b`, "i").test(text) && !AMBIGUOUS_COMPANY_NAMES.has(name)) out.add(NAME_TO_TICKER[name]);
   }
   for (const raw of text.split(/[^A-Za-z0-9.\-$^=]+/)) {
-    const t = raw.replace(/^\$/, "").toUpperCase();
-    if (COMMON_TICKERS[t]) out.add(COMMON_TICKERS[t]);
+    const dollar = raw.startsWith("$");
+    const bare = raw.replace(/^\$/, "");
+    const t = bare.toUpperCase();
+    if (!COMMON_TICKERS[t]) continue;
+    // "right now", "all", "can" etc. are English words, not tickers — only
+    // accept ambiguous tokens when explicitly written as a ticker ($NOW / NOW).
+    if (AMBIGUOUS_LOWER_TICKERS.has(t) && !dollar && bare !== t) continue;
+    out.add(COMMON_TICKERS[t]);
   }
+
   return Array.from(out).slice(0, 8);
 }
 
@@ -238,12 +254,24 @@ const pct = (n: number | null | undefined, d = 2): string =>
 const logReturnsLocal = (closes: number[]): number[] => {
   const o: number[] = []; for (let i = 1; i < closes.length; i++) if (closes[i-1] > 0 && closes[i] > 0) o.push(Math.log(closes[i]/closes[i-1])); return o;
 };
-// Normalize a Yahoo Quote (which uses regularMarket* fields) to short keys
-// (price/changePct) so downstream renderers always have a real number.
-const qPrice = (q: any): number | null | undefined =>
-  q?.price ?? q?.regularMarketPrice ?? q?.last ?? null;
-const qChangePct = (q: any): number | null | undefined =>
-  q?.changePct ?? q?.regularMarketChangePercent ?? null;
+// Normalize a Quote to short keys (price/changePct) so downstream renderers
+// always have a real number. Session-aware: during pre/after-hours the current
+// price is the extended-hours print, not the last regular-session close.
+const qPrice = (q: any): number | null | undefined => {
+  const state = String(q?.marketState ?? "").toUpperCase();
+  const fin = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null);
+  if (state.includes("PRE")) { const p = fin(q?.preMarketPrice); if (p) return p; }
+  if (state.includes("POST")) { const p = fin(q?.postMarketPrice); if (p) return p; }
+  return q?.price ?? q?.regularMarketPrice ?? q?.last ?? null;
+};
+const qChangePct = (q: any): number | null | undefined => {
+  const state = String(q?.marketState ?? "").toUpperCase();
+  const fin = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : null);
+  if (state.includes("PRE")) { const p = fin(q?.preMarketChangePercent); if (p != null) return p; }
+  if (state.includes("POST")) { const p = fin(q?.postMarketChangePercent); if (p != null) return p; }
+  return q?.changePct ?? q?.regularMarketChangePercent ?? null;
+};
+
 const quoteSymbol = (q: any): string => String(q?.symbol ?? "").toUpperCase();
 const asFinite = (n: unknown): number | null =>
   typeof n === "number" && Number.isFinite(n) ? n : null;
@@ -265,7 +293,8 @@ function isPlainHelpAnswer(query: string, answer: string): boolean {
 
 async function fetchLiveQuoteMap(symbols: string[]): Promise<Map<string, any>> {
   const unique = Array.from(new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))).slice(0, 12);
-  const quotes = await getQuotes(unique).catch(() => []);
+  // Always hit Yahoo live for the price the user will read in chat.
+  const quotes = await getQuotes(unique, { fresh: true }).catch(() => []);
   const map = new Map<string, any>();
   for (const q of quotes) {
     const sym = quoteSymbol(q);
@@ -660,11 +689,14 @@ function extractUIAction(text: string): { text: string; ui_actions: any[] } {
 // any "$NN.NN" token that appears shortly after each ticker, and append an
 // authoritative "LIVE VERIFIED PRICES" footer that the user can always trust.
 async function verifyPricesInText(text: string, seedSymbols: string[] = []): Promise<string> {
-  const tickers = Array.from(new Set([...seedSymbols, ...extractKnownSymbols(text)].map((s) => s.toUpperCase()))).slice(0, 8);
+  const tickers = Array.from(new Set([...seedSymbols, ...extractKnownSymbols(text)].map((s) => s.toUpperCase())))
+    // Guard against stray fragments of formatted numbers/timestamps ("1", "Z", "5B").
+    .filter((s) => (s.startsWith("^") || s.length >= 2) && /[A-Z^]/.test(s) && !/^\d/.test(s))
+    .slice(0, 8);
   if (tickers.length === 0) return text;
   let quotes: any[] = [];
   try { quotes = await getQuotes(tickers, { fresh: true }); } catch { return text; }
-  const live = new Map<string, { price: number; chg: number | null; name?: string }>();
+  const live = new Map<string, { price: number; chg: number | null; name?: string; session: string; src?: string; prev?: number | null }>();
   for (const q of quotes) {
     const p = qPrice(q);
     if (p == null || !Number.isFinite(p as number)) continue;
@@ -672,6 +704,9 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
       price: Number(p),
       chg: Number.isFinite(qChangePct(q) as number) ? Number(qChangePct(q)) : null,
       name: q.shortName || q.longName,
+      session: quoteSessionLabel(q),
+      src: (q as any).source,
+      prev: Number.isFinite((q as any).regularMarketPreviousClose) ? Number((q as any).regularMarketPreviousClose) : null,
     });
   }
   if (live.size === 0) return text;
@@ -686,9 +721,9 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
 
   const footer = [
     ``, ``, `---`,
-    `**[LIVE VERIFIED PRICES — Yahoo feed @ ${new Date().toISOString().slice(11,19)}Z]**`,
+    `**[LIVE VERIFIED PRICES — multi-feed cross-check @ ${new Date().toISOString().slice(11,19)}Z]**`,
     ...Array.from(live.entries()).map(([s, v]) =>
-      `- **${s}**${v.name ? ` (${v.name})` : ""}: $${v.price.toLocaleString(undefined,{maximumFractionDigits:2})}${v.chg != null ? ` (${v.chg >= 0 ? "+" : ""}${v.chg.toFixed(2)}%)` : ""}`
+      `- **${s}**${v.name ? ` (${v.name})` : ""}: $${v.price.toLocaleString(undefined,{maximumFractionDigits:2})}${v.chg != null ? ` (${v.chg >= 0 ? "+" : ""}${v.chg.toFixed(2)}%)` : ""} — ${v.session}${v.prev != null ? `, prev close $${v.prev.toLocaleString(undefined,{maximumFractionDigits:2})}` : ""}${v.src ? ` [${v.src}]` : ""}`
     ),
     `*Any prices above the line that conflict with this block are stale — trust this footer.*`,
   ].join("\n");
@@ -823,7 +858,8 @@ function lastUserText(msgs: UIMsg[]): string {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i];
     if (m.role !== "user") continue;
-    return m.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
+    if (typeof (m as any).content === "string") return String((m as any).content).trim();
+    return (m.parts ?? []).map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
   }
   return "";
 }
@@ -929,6 +965,7 @@ export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
+        try {
         let body: { messages?: UIMsg[] } = {};
         try { body = await request.json(); } catch {}
         const msgs = Array.isArray(body.messages) ? body.messages : [];
@@ -974,6 +1011,10 @@ export const Route = createFileRoute("/api/chat")({
         const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
         const acts = intentToUIAction(intent);
         return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
+        } catch (e) {
+          console.error("[chat] fatal", e);
+          return Response.json({ text: `Oracle hit an internal error: ${String(e).slice(0, 300)}`, ui_action: null, ui_actions: []}, { status: 200 });
+        }
       },
     },
   },

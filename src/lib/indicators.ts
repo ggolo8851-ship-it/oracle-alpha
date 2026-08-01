@@ -183,8 +183,12 @@ export function atr(bars: Bar[], period = 14): number | null {
     trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
   }
   if (trs.length < period) return null;
-  return mean(trs.slice(-period));
+  // Wilder smoothing (true ATR), not a simple average of the last N true ranges.
+  let a = mean(trs.slice(0, period));
+  for (let i = period; i < trs.length; i++) a = (a * (period - 1) + trs[i]) / period;
+  return a;
 }
+
 
 export function roc(closes: number[], period: number): number | null {
   if (closes.length <= period) return null;
