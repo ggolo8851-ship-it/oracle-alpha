@@ -993,7 +993,7 @@ export const Route = createFileRoute("/api/chat")({
         return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
         } catch (e) {
           console.error("[chat] fatal", e);
-          return Response.json({ text: `Oracle hit an internal error: ${String(e).slice(0, 300)}`, ui_action: null, ui_actions: [], error: String(e) }, { status: 200 });
+          return Response.json({ text: `Oracle hit an internal error: ${String(e).slice(0, 300)}`, stack: String((e as any)?.stack ?? "").slice(0, 1500), ui_action: null, ui_actions: [], error: String(e) }, { status: 200 });
         }
       },
     },
