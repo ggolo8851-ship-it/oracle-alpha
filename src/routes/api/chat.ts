@@ -265,7 +265,8 @@ function isPlainHelpAnswer(query: string, answer: string): boolean {
 
 async function fetchLiveQuoteMap(symbols: string[]): Promise<Map<string, any>> {
   const unique = Array.from(new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))).slice(0, 12);
-  const quotes = await getQuotes(unique).catch(() => []);
+  // Always hit Yahoo live for the price the user will read in chat.
+  const quotes = await getQuotes(unique, { fresh: true }).catch(() => []);
   const map = new Map<string, any>();
   for (const q of quotes) {
     const sym = quoteSymbol(q);
