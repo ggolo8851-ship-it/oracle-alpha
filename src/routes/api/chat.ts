@@ -129,9 +129,13 @@ function extractSymbols(text: string): string[] {
     const explicit = raw.startsWith("$");
     const known = COMMON_TICKERS[t];
     if (known) {
-      if (explicit || hasFinanceCue || sourceUpper) out.add(known);
+      // Ambiguous English words (now, all, can, on, live…) only count as
+      // tickers when written as one explicitly: "$NOW" or caps "NOW".
+      const ambiguousWord = AMBIGUOUS_LOWER_TICKERS.has(t) && !explicit && !sourceUpper;
+      if (!ambiguousWord && (explicit || hasFinanceCue || sourceUpper)) out.add(known);
       continue;
     }
+
     if (!hasFinanceCue || !sourceUpper) continue;
     if (stripped.length < 2 || stripped.length > 12) continue;
     if (!VALID_SYMBOL.test(t)) continue;
