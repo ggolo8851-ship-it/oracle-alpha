@@ -677,7 +677,7 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
   if (tickers.length === 0) return text;
   let quotes: any[] = [];
   try { quotes = await getQuotes(tickers, { fresh: true }); } catch { return text; }
-  const live = new Map<string, { price: number; chg: number | null; name?: string }>();
+  const live = new Map<string, { price: number; chg: number | null; name?: string; session: string; src?: string; prev?: number | null }>();
   for (const q of quotes) {
     const p = qPrice(q);
     if (p == null || !Number.isFinite(p as number)) continue;
@@ -685,6 +685,9 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
       price: Number(p),
       chg: Number.isFinite(qChangePct(q) as number) ? Number(qChangePct(q)) : null,
       name: q.shortName || q.longName,
+      session: quoteSessionLabel(q),
+      src: (q as any).source,
+      prev: Number.isFinite((q as any).regularMarketPreviousClose) ? Number((q as any).regularMarketPreviousClose) : null,
     });
   }
   if (live.size === 0) return text;
@@ -699,9 +702,9 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
 
   const footer = [
     ``, ``, `---`,
-    `**[LIVE VERIFIED PRICES — Yahoo feed @ ${new Date().toISOString().slice(11,19)}Z]**`,
+    `**[LIVE VERIFIED PRICES — multi-feed cross-check @ ${new Date().toISOString().slice(11,19)}Z]**`,
     ...Array.from(live.entries()).map(([s, v]) =>
-      `- **${s}**${v.name ? ` (${v.name})` : ""}: $${v.price.toLocaleString(undefined,{maximumFractionDigits:2})}${v.chg != null ? ` (${v.chg >= 0 ? "+" : ""}${v.chg.toFixed(2)}%)` : ""}`
+      `- **${s}**${v.name ? ` (${v.name})` : ""}: $${v.price.toLocaleString(undefined,{maximumFractionDigits:2})}${v.chg != null ? ` (${v.chg >= 0 ? "+" : ""}${v.chg.toFixed(2)}%)` : ""} — ${v.session}${v.prev != null ? `, prev close $${v.prev.toLocaleString(undefined,{maximumFractionDigits:2})}` : ""}${v.src ? ` [${v.src}]` : ""}`
     ),
     `*Any prices above the line that conflict with this block are stale — trust this footer.*`,
   ].join("\n");
