@@ -106,7 +106,7 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
   try {
     const path = `/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d&includePrePost=true`;
     const r = await yfetch(path);
-    if (!r || !r.ok) { cacheSet(ck, null, 15_000); return null; }
+    if (!r || !r.ok) { console.error("[yahoo] chartMeta http", sym, r?.status); cacheSet(ck, null, 15_000); return null; }
     const j = (await r.json()) as any;
     const res = j?.chart?.result?.[0];
     const meta = res?.meta;
@@ -154,7 +154,8 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
     // Live prices go stale fast — keep the window tight.
     cacheSet(ck, q, 10_000);
     return q;
-  } catch {
+  } catch (e) {
+    console.error("[yahoo] chartMeta fail", sym, String(e));
     cacheSet(ck, null, 15_000);
     return null;
   }
