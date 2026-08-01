@@ -111,7 +111,9 @@ function extractSymbols(text: string): string[] {
   const shouted = letters.length > 0 && letters === letters.toUpperCase();
   // 1) Explicit $TICKER tokens — always honored.
   for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
-    out.add(m[1].toUpperCase());
+    const t = m[1].toUpperCase();
+    if (!/[A-Z^]/.test(t)) continue; // dollar amounts are not tickers
+    out.add(t);
   }
   // 2) Company-name aliases — case-insensitive whole-word match.
   for (const name of Object.keys(NAME_TO_TICKER)) {
@@ -152,7 +154,10 @@ function extractSymbols(text: string): string[] {
 function extractKnownSymbols(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/\$([A-Za-z0-9^][A-Za-z0-9.\-=]{0,11})/g)) {
-    out.add(m[1].toUpperCase());
+    const t = m[1].toUpperCase();
+    // "$1.2B", "$198.98" are dollar figures, not tickers.
+    if (!/[A-Z^]/.test(t)) continue;
+    out.add(t);
   }
   for (const name of Object.keys(NAME_TO_TICKER)) {
     if (new RegExp(`\\b${escapeRegex(name)}\\b`, "i").test(text) && !AMBIGUOUS_COMPANY_NAMES.has(name)) out.add(NAME_TO_TICKER[name]);
