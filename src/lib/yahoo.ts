@@ -143,7 +143,7 @@ async function fetchChartMeta(sym: string): Promise<Quote | null> {
       postMarketPrice: meta.postMarketPrice,
       postMarketChangePercent: meta.postMarketChangePercent,
       marketState: meta.marketState,
-      regularMarketVolume: meta.regularMarketVolume ?? vols.reduce((a, v) => a + (finiteNumber(v) ? v : 0), 0) || undefined,
+      regularMarketVolume: meta.regularMarketVolume ?? (vols.reduce<number>((a, v) => a + (finiteNumber(v) ? v : 0), 0) || undefined),
       regularMarketDayHigh: meta.regularMarketDayHigh ?? (dayCloses.length ? Math.max(...dayCloses) : undefined),
       regularMarketDayLow: meta.regularMarketDayLow ?? (dayCloses.length ? Math.min(...dayCloses) : undefined),
       fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
