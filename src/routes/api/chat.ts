@@ -238,12 +238,24 @@ const pct = (n: number | null | undefined, d = 2): string =>
 const logReturnsLocal = (closes: number[]): number[] => {
   const o: number[] = []; for (let i = 1; i < closes.length; i++) if (closes[i-1] > 0 && closes[i] > 0) o.push(Math.log(closes[i]/closes[i-1])); return o;
 };
-// Normalize a Yahoo Quote (which uses regularMarket* fields) to short keys
-// (price/changePct) so downstream renderers always have a real number.
-const qPrice = (q: any): number | null | undefined =>
-  q?.price ?? q?.regularMarketPrice ?? q?.last ?? null;
-const qChangePct = (q: any): number | null | undefined =>
-  q?.changePct ?? q?.regularMarketChangePercent ?? null;
+// Normalize a Quote to short keys (price/changePct) so downstream renderers
+// always have a real number. Session-aware: during pre/after-hours the current
+// price is the extended-hours print, not the last regular-session close.
+const qPrice = (q: any): number | null | undefined => {
+  const state = String(q?.marketState ?? "").toUpperCase();
+  const fin = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null);
+  if (state.includes("PRE")) { const p = fin(q?.preMarketPrice); if (p) return p; }
+  if (state.includes("POST")) { const p = fin(q?.postMarketPrice); if (p) return p; }
+  return q?.price ?? q?.regularMarketPrice ?? q?.last ?? null;
+};
+const qChangePct = (q: any): number | null | undefined => {
+  const state = String(q?.marketState ?? "").toUpperCase();
+  const fin = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : null);
+  if (state.includes("PRE")) { const p = fin(q?.preMarketChangePercent); if (p != null) return p; }
+  if (state.includes("POST")) { const p = fin(q?.postMarketChangePercent); if (p != null) return p; }
+  return q?.changePct ?? q?.regularMarketChangePercent ?? null;
+};
+
 const quoteSymbol = (q: any): string => String(q?.symbol ?? "").toUpperCase();
 const asFinite = (n: unknown): number | null =>
   typeof n === "number" && Number.isFinite(n) ? n : null;
