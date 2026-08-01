@@ -945,6 +945,7 @@ export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
+        try {
         let body: { messages?: UIMsg[] } = {};
         try { body = await request.json(); } catch {}
         const msgs = Array.isArray(body.messages) ? body.messages : [];
@@ -990,6 +991,10 @@ export const Route = createFileRoute("/api/chat")({
         const verifiedDet = await verifyPricesInText(detText, extractSymbols(query)).catch(() => detText);
         const acts = intentToUIAction(intent);
         return Response.json({ text: verifiedDet, ui_action: acts[0] ?? null, ui_actions: acts });
+        } catch (e) {
+          console.error("[chat] fatal", e);
+          return Response.json({ text: `Oracle hit an internal error: ${String(e).slice(0, 300)}`, ui_action: null, ui_actions: [], error: String(e) }, { status: 200 });
+        }
       },
     },
   },
