@@ -839,7 +839,8 @@ function lastUserText(msgs: UIMsg[]): string {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i];
     if (m.role !== "user") continue;
-    return m.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
+    if (typeof (m as any).content === "string") return String((m as any).content).trim();
+    return (m.parts ?? []).map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
   }
   return "";
 }
