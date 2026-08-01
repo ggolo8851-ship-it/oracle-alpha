@@ -95,46 +95,67 @@ async function yfetch(path: string, opts: { tries?: number } = {}): Promise<Resp
   return null;
 }
 
+// Primary live-price source: the 1-minute intraday chart with pre/post included.
+// This is the freshest public Yahoo surface (v7/finance/quote is now crumb-gated
+// and returns 401/429), and it gives us the true last traded tick plus the
+// previous close needed for an exact change %.
 async function fetchChartMeta(sym: string): Promise<Quote | null> {
   const ck = `meta:${sym}`;
   const hit = cacheGet<Quote | null>(ck);
   if (hit !== undefined) return hit;
   try {
-    const path = `/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
+    const path = `/v8/finance/chart/${encodeURIComponent(sym)}?interval=1m&range=1d&includePrePost=true`;
     const r = await yfetch(path);
-    if (!r || !r.ok) { cacheSet(ck, null, 30_000); return null; }
+    if (!r || !r.ok) { cacheSet(ck, null, 15_000); return null; }
     const j = (await r.json()) as any;
     const res = j?.chart?.result?.[0];
     const meta = res?.meta;
-    if (!meta) { cacheSet(ck, null, 30_000); return null; }
-    const price = selectCurrentPrice(meta);
+    if (!meta) { cacheSet(ck, null, 15_000); return null; }
+
+    // Last non-null 1m close, with its timestamp, so we can prefer whichever of
+    // (series tick, meta price) is actually more recent.
+    const ts: number[] = res?.timestamp ?? [];
+    const closes: (number | null)[] = res?.indicators?.quote?.[0]?.close ?? [];
+    const vols: (number | null)[] = res?.indicators?.quote?.[0]?.volume ?? [];
+    let tickPrice: number | undefined;
+    let tickTime = 0;
+    for (let i = closes.length - 1; i >= 0; i--) {
+      if (finiteNumber(closes[i])) { tickPrice = closes[i] as number; tickTime = ts[i] ?? 0; break; }
+    }
+    const metaPrice = selectCurrentPrice(meta);
+    const metaTime = Number(meta.regularMarketTime ?? 0);
+    let price = metaPrice;
+    if (finiteNumber(tickPrice) && (!finiteNumber(metaPrice) || tickTime >= metaTime)) price = tickPrice;
+
     const prev = meta.chartPreviousClose ?? meta.previousClose;
-    const change = price != null && prev != null ? price - prev : undefined;
-    const changePct = change != null && prev ? (change / prev) * 100 : undefined;
+    const change = price != null && finiteNumber(prev) ? price - prev : undefined;
+    const changePct = change != null && finiteNumber(prev) ? (change / prev) * 100 : undefined;
+    const dayCloses = closes.filter(finiteNumber) as number[];
     const q: Quote = {
       symbol: meta.symbol ?? sym,
       shortName: meta.shortName,
       longName: meta.longName,
       regularMarketPrice: price,
       regularMarketChange: change,
-      regularMarketChangePercent: selectCurrentChangePct(meta) ?? changePct,
+      regularMarketChangePercent: changePct ?? selectCurrentChangePct(meta),
       preMarketPrice: meta.preMarketPrice,
       preMarketChangePercent: meta.preMarketChangePercent,
       postMarketPrice: meta.postMarketPrice,
       postMarketChangePercent: meta.postMarketChangePercent,
       marketState: meta.marketState,
-      regularMarketVolume: meta.regularMarketVolume,
-      regularMarketDayHigh: meta.regularMarketDayHigh,
-      regularMarketDayLow: meta.regularMarketDayLow,
+      regularMarketVolume: meta.regularMarketVolume ?? vols.reduce((a, v) => a + (finiteNumber(v) ? v : 0), 0) || undefined,
+      regularMarketDayHigh: meta.regularMarketDayHigh ?? (dayCloses.length ? Math.max(...dayCloses) : undefined),
+      regularMarketDayLow: meta.regularMarketDayLow ?? (dayCloses.length ? Math.min(...dayCloses) : undefined),
       fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
       fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
       currency: meta.currency,
       exchange: meta.exchangeName,
     };
-    cacheSet(ck, q, 60_000); // 60s quote cache
+    // Live prices go stale fast — keep the window tight.
+    cacheSet(ck, q, 10_000);
     return q;
   } catch {
-    cacheSet(ck, null, 30_000);
+    cacheSet(ck, null, 15_000);
     return null;
   }
 }
@@ -169,39 +190,23 @@ function normalizeQuote(q: any, fallbackSymbol?: string): Quote | null {
   };
 }
 
-async function fetchQuoteBatch(symbols: string[]): Promise<Quote[]> {
-  const cleanSymbols = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
-  if (!cleanSymbols.length) return [];
-  const fresh: Quote[] = [];
-  const missing: string[] = [];
-  for (const sym of cleanSymbols) {
-    const hit = cacheGet<Quote | null>(`quote:${sym}`);
-    if (hit !== undefined) {
-      if (hit) fresh.push(hit);
-    } else {
-      missing.push(sym);
+// Opportunistic enrichment only (marketCap / PE / avg volume). Yahoo now gates
+// v7 behind a crumb, so a failure here is expected and non-fatal — never let it
+// decide the price.
+async function enrichFromQuoteApi(symbols: string[]): Promise<Map<string, Quote>> {
+  const out = new Map<string, Quote>();
+  if (!symbols.length) return out;
+  const path = `/v7/finance/quote?symbols=${encodeURIComponent(symbols.slice(0, 20).join(","))}`;
+  const r = await yfetch(path, { tries: 1 });
+  if (!r?.ok) return out;
+  try {
+    const j = (await r.json()) as any;
+    for (const raw of j?.quoteResponse?.result ?? []) {
+      const q = normalizeQuote(raw);
+      if (q) out.set(q.symbol, q);
     }
-  }
-  for (let i = 0; i < missing.length; i += 20) {
-    const chunk = missing.slice(i, i + 20);
-    const path = `/v7/finance/quote?symbols=${encodeURIComponent(chunk.join(","))}`;
-    const r = await yfetch(path, { tries: 2 });
-    const seen = new Set<string>();
-    if (r?.ok) {
-      const j = (await r.json()) as any;
-      for (const raw of j?.quoteResponse?.result ?? []) {
-        const q = normalizeQuote(raw);
-        if (!q) continue;
-        seen.add(q.symbol);
-        cacheSet(`quote:${q.symbol}`, q, 20_000);
-        cacheSet(`meta:${q.symbol}`, q, 20_000);
-        fresh.push(q);
-      }
-    }
-    for (const sym of chunk) if (!seen.has(sym)) cacheSet(`quote:${sym}`, null, 8_000);
-  }
-  const bySym = new Map(fresh.map((q) => [q.symbol, q]));
-  return cleanSymbols.map((s) => bySym.get(s)).filter((q): q is Quote => Boolean(q));
+  } catch { /* ignore */ }
+  return out;
 }
 
 /** Drop cached quote/meta entries so the next read hits Yahoo live. */
@@ -217,25 +222,47 @@ export async function getQuotes(symbols: string[], opts: { fresh?: boolean } = {
   if (!symbols.length) return [];
   const unique = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
   if (opts.fresh) invalidateQuotes(unique);
-  const batch = await fetchQuoteBatch(unique).catch(() => []);
-  const bySym = new Map(batch.map((q) => [q.symbol, q]));
-  const missing = unique.filter((s) => !bySym.has(s));
-  const out: Quote[] = [...batch];
-  // Lower concurrency to reduce 429 pressure on Yahoo fallback.
-  const CONC = 4;
+
+  const out = new Map<string, Quote>();
+  const CONC = 6;
   let i = 0;
   await Promise.all(
-    Array.from({ length: Math.min(CONC, missing.length) }, async () => {
-      while (i < missing.length) {
-        const idx = i++;
-        const q = await fetchChartMeta(missing[idx]);
-        if (q) out.push(q);
+    Array.from({ length: Math.min(CONC, unique.length) }, async () => {
+      while (i < unique.length) {
+        const sym = unique[i++];
+        const q = await fetchChartMeta(sym).catch(() => null);
+        if (q) out.set(sym, { ...q, symbol: sym });
       }
     }),
   );
-  const finalMap = new Map(out.map((q) => [q.symbol, q]));
-  return unique.map((s) => finalMap.get(s)).filter((q): q is Quote => Boolean(q));
+
+  // Fill fundamentals (and rescue any symbol the chart endpoint missed).
+  const needsExtra = unique.filter((s) => {
+    const q = out.get(s);
+    return !q || q.marketCap == null;
+  });
+  if (needsExtra.length) {
+    const extra = await enrichFromQuoteApi(needsExtra).catch(() => new Map<string, Quote>());
+    for (const [sym, e] of extra) {
+      const base = out.get(sym);
+      if (!base) { out.set(sym, e); continue; }
+      // Chart price always wins; only merge fields the chart cannot provide.
+      out.set(sym, {
+        ...base,
+        marketCap: base.marketCap ?? e.marketCap,
+        trailingPE: base.trailingPE ?? e.trailingPE,
+        forwardPE: base.forwardPE ?? e.forwardPE,
+        averageVolume: base.averageVolume ?? e.averageVolume,
+        shortName: base.shortName ?? e.shortName,
+        longName: base.longName ?? e.longName,
+        marketState: base.marketState ?? e.marketState,
+      });
+    }
+  }
+
+  return unique.map((s) => out.get(s)).filter((q): q is Quote => Boolean(q));
 }
+
 
 
 export type Bar = { t: number; o: number|null; h: number|null; l: number|null; c: number|null; v: number|null };
