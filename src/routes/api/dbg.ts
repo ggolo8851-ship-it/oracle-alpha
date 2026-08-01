@@ -3,18 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 const H = { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", Accept: "application/json,text/plain,*/*" };
 export const Route = createFileRoute("/api/dbg")({
   server: { handlers: { GET: async () => {
-    const urls = [
-      "https://stockanalysis.com/api/symbol/s/nvda/history?range=1Y&period=Daily",
-      "https://stockanalysis.com/api/charts/s/nvda/1Y",
-      "https://stockanalysis.com/api/quotes/s/nvda/full",
-      "https://stockanalysis.com/api/quotes/s/nvda,aapl",
-      "https://stockanalysis.com/api/quotes/i/spx",
-    ];
-    const out: any[] = [];
-    for (const u of urls) {
-      try { const r = await fetch(u, { headers: H }); const t = await r.text(); out.push({ u: u.slice(28), status: r.status, head: t.slice(0, 300) }); }
-      catch (e) { out.push({ u, err: String(e) }); }
-    }
-    return Response.json(out);
+    const r = await fetch("https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=NVDA|.SPX|BTC.CM=|@CL.1&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json", { headers: H });
+    const j: any = await r.json();
+    const arr = j?.FormattedQuoteResult?.FormattedQuote ?? [];
+    return Response.json(arr.map((q: any) => ({ symbol: q.symbol, keys: Object.keys(q), last: q.last, ch: q.change_pct, prev: q.previous_day_closing, vol: q.volume, ext: q.ExtendedMktQuote })));
   } } },
 });
