@@ -20,7 +20,8 @@ import { getPulseCached } from "./pulse";
 import { computeOracle100 } from "@/lib/oracle100";
 import { REGIONS, SECTORS } from "@/lib/universes";
 import { getPrivateEquityCached } from "./private-equity";
-import { computeMetaState, madScrub } from "@/lib/meta-state";
+import { computeMetaState } from "@/lib/meta-state";
+import { evaluateArithmetic, lognormalSummary } from "@/lib/analysis-math";
 import { uvetaStep, buildPerspectives } from "@/lib/uveta";
 
 // ───────────────────────────── intent parsing ─────────────────────────────
@@ -356,7 +357,8 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
     const liveQuote = liveQuoteMap.get(sym.toUpperCase());
     const livePrice = asFinite(qPrice(liveQuote));
     try {
-      const bars = mergeLivePriceIntoBars(await getHistory(sym, "1y", "1d"), liveQuote);
+      // Indicators use observed daily bars; extended-hours spot anchors scenarios only.
+      const bars = await getHistory(sym, "1y", "1d");
       const closes = extractCloses(bars);
       const vols = extractVolumes(bars);
       if (closes.length < 30) {
@@ -371,8 +373,10 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const sma20v = sma(closes, 20); const sma50v = sma(closes, 50); const sma200v = sma(closes, 200);
       const rsi14 = rsi(closes, 14);
       const annVol = stdev(logReturnsLocal(closes)) * Math.sqrt(252) * 100;
-      const vol20 = vols.length > 20 ? mean(vols.slice(-20)) : null;
-      const volZ = vol20 ? (vols[vols.length - 1] - vol20) / (stdev(vols.slice(-20)) || 1) : null;
+      const volumeBaseline = vols.slice(-21, -1);
+      const vol20 = volumeBaseline.length === 20 ? mean(volumeBaseline) : null;
+      const volumeSd = stdev(volumeBaseline);
+      const volZ = vol20 != null && volumeSd > 0 ? (vols[vols.length - 1] - vol20) / volumeSd : null;
       const Pmax = asFinite(liveQuote?.fiftyTwoWeekHigh) ?? Math.max(...closes); const Pmin = asFinite(liveQuote?.fiftyTwoWeekLow) ?? Math.min(...closes);
       const distHigh = (last / Pmax - 1) * 100; const distLow = (last / Pmin - 1) * 100;
       const regime = sma200v ? (last > sma200v ? "BULL" : "BEAR") : "UNKNOWN";
@@ -406,8 +410,7 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
         const o = oracle.master;
         parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift prob ${r(oracle.diagnostics.regime_shift,2)} · avalanche risk ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)}${livePrice != null ? ` vs verified spot ${r(last)}` : " (latest daily-history basis)"}.`);
         // META-STATE (formulas 176–210 + upgrades 1–10): MAD-scrubbed, fat-tail safe.
-        const cleanedCloses = madScrub(closes);
-        const meta = computeMetaState(cleanedCloses, o, {
+        const meta = computeMetaState(closes, o, {
           behavioral: beh ? (beh.reflexivity_corr ?? 0) : 0,
           regimeProbs: [0.35, 0.30, 0.20, 0.15],
         });
@@ -424,8 +427,7 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
         const uv = uvetaStep({
           perspectives,
           prevUpsilon: o.final_signal,
-          actualReturn: lastRet,
-          predictedRet: o.next_price_drift,
+          // No prior, out-of-sample forecast is stored here: do not invent prediction error.
         });
         const topAttn = Object.entries(uv.attention).sort((a,b) => b[1]-a[1]).slice(0,3)
           .map(([k,v]) => `${k} ${r(v,2)}`).join(" · ");
@@ -435,18 +437,16 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const recentRets = logReturnsLocal(closes).slice(-90);
       const dailyVol = stdev(recentRets);
       const dailyMean = mean(recentRets.slice(-60));
-      const rawDrift = oracle ? dailyMean * 60 + oracle.master.next_price_drift * Math.sqrt(60) * 0.35 : ((m?.hist ?? 0) > 0 ? dailyMean * 60 + 0.03 : dailyMean * 60 - 0.02);
+      // Historical mean log return is the drift estimator. Oracle scores are not calibrated drift.
+      const rawDrift = dailyMean * 60;
       const driftCap = Math.min(0.35, Math.max(0.06, dailyVol * Math.sqrt(60) * 0.75 + 0.06));
       const drift = Math.max(-driftCap, Math.min(driftCap, rawDrift));
       const horizonVol = dailyVol * Math.sqrt(60);
       const anchorSpot = livePrice ?? last;
-      const upTarget = anchorSpot * Math.exp(drift + horizonVol * 0.7);
-      const dnTarget = anchorSpot * Math.exp(drift - horizonVol * 0.9);
-      const baseTarget = anchorSpot * Math.exp(drift);
-      const trendScore = (sma50v ? (last > sma50v ? 1 : -1) : 0) * 0.5 + ((m?.hist ?? 0) > 0 ? 0.5 : -0.5);
-      const pUp = Math.max(0.1, Math.min(0.8, 0.5 + (oracle?.master.final_signal ?? 0) * 0.22 + Math.tanh(drift * 4) * 0.12 + trendScore * 0.07));
-      const pDn = Math.max(0.05, Math.min(0.6, 1 - pUp - 0.25));
-      const pBase = Math.max(0.05, 1 - pUp - pDn);
+      const scenario = lognormalSummary(anchorSpot, drift, horizonVol ** 2);
+      const upTarget = scenario.p95;
+      const dnTarget = scenario.p05;
+      const baseTarget = scenario.median;
       parts.push(livePrice != null
         ? `**[SCENARIOS — 60d horizon]** Anchor spot **$${r(anchorSpot)}** · Bull band ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base band ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear band ~$${r(dnTarget)} (${pct(pDn*100,0)}). These are volatility-bounded probability bands from the live spot, not a fabricated exact future price — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`
         : `**[SCENARIOS — 60d horizon]** Dollar targets paused because Yahoo live quote is unavailable. Directional probabilities only: Bull ${pct(pUp*100,0)} · Base ${pct(pBase*100,0)} · Bear ${pct(pDn*100,0)}.`);
@@ -757,15 +757,12 @@ function requiresDeterministicMarketData(intent: Intent): boolean {
 function localBasicAnswer(query: string): string | null {
   const q = query.trim();
   const lower = q.toLowerCase();
-  const arithmetic = q.match(/^\s*what\s+is\s+([0-9+\-*/().\s]+)\??\s*$/i) ?? q.match(/^\s*([0-9+\-*/().\s]+)=?\s*$/);
+  const arithmetic = q.match(/^\s*(?:what\s+is|calculate|compute)\s+([0-9+\-*/().^\s]+)\??\s*$/i) ?? q.match(/^\s*([0-9+\-*/().^\s]+)=?\s*$/);
   if (arithmetic) {
     const expr = arithmetic[1].trim();
-    if (/^[0-9+\-*/().\s]+$/.test(expr) && expr.length <= 80) {
-      try {
-        const value = Function(`"use strict"; return (${expr});`)();
-        if (typeof value === "number" && Number.isFinite(value)) return `${expr} = **${r(value, 6).replace(/\.0+$/, "")}**`;
-      } catch {}
-    }
+    const value = evaluateArithmetic(expr);
+    return value == null ? "That expression is invalid or has no finite result; check parentheses and division by zero."
+      : `${expr} = **${Number(value.toPrecision(15)).toLocaleString("en-US", { maximumSignificantDigits: 15 })}**`;
   }
   if (/\b(what is|define|explain)\b.*\b(inflation|inflacion|inflación)\b/i.test(lower)) {
     return "**Inflation** is a sustained rise in the general price level, which means each unit of currency buys less over time. Main drivers: demand running hotter than supply, higher input costs, money/credit expansion, supply shocks, and expectations feeding into wages/prices.";
@@ -898,7 +895,7 @@ async function callModel(
     const gateway = createLovableAiGatewayProvider(key);
     const result = await generateText({
       model: gateway(model),
-      temperature: 0.35,
+      temperature: 0.1,
       abortSignal: AbortSignal.timeout(timeoutMs),
       messages: [{ role: "system", content: systemMsg }, ...history],
     });
@@ -937,7 +934,7 @@ async function callLLM(
     ``,
     `=== CONSENSUS ADJUDICATION MODE ===`,
     `Independent frontier models each answered the user's last message. Produce ONE final answer that:`,
-    `1. Keeps only claims supported by the CONTEXT PACKET or agreed by both drafts.`,
+    `1. Keeps factual claims only when supported by evidence. Agreement between drafts is not verification. Recalculate arithmetic independently.`,
     `2. Drops or explicitly flags anything the drafts contradict each other on.`,
     `3. Uses ONLY packet numbers for prices, levels and stats — never a draft's number that is absent from the packet.`,
     `4. Preserves the user's language, keeps the strongest reasoning from each draft, and removes duplication.`,
