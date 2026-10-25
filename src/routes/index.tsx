@@ -33,6 +33,10 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "ANOMALY ∞ — Oracle Alpha Institutional Intelligence" },
+      { property: "og:title", content: "ANOMALY ∞ — Oracle Alpha Institutional Intelligence" },
+      { property: "og:description", content: "Market research, verified-source quotes and assumption-aware financial analysis in the ANOMALY terminal." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
       {
         name: "description",
         content:

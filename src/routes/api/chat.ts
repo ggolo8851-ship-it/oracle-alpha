@@ -20,7 +20,8 @@ import { getPulseCached } from "./pulse";
 import { computeOracle100 } from "@/lib/oracle100";
 import { REGIONS, SECTORS } from "@/lib/universes";
 import { getPrivateEquityCached } from "./private-equity";
-import { computeMetaState, madScrub } from "@/lib/meta-state";
+import { computeMetaState } from "@/lib/meta-state";
+import { evaluateArithmetic, lognormalSummary } from "@/lib/analysis-math";
 import { uvetaStep, buildPerspectives } from "@/lib/uveta";
 
 // ───────────────────────────── intent parsing ─────────────────────────────
@@ -204,7 +205,7 @@ function detectIntent(raw: string): Intent {
   // UI actions
   if (sym && /\b(add|pin|put|stick|throw|track|watch)\b[\s\S]*\b(bag|watch|watchlist|list)\b/.test(lower)) return { kind: "ui_add_bag", symbol: sym, symbols };
   if (sym && /\b(remove|unpin|drop|delete)\b[\s\S]*\b(bag|watch)\b/.test(lower)) return { kind: "ui_remove_bag", symbol: sym, symbols };
-  if (sym && /\b(simulate|simulation|scenario|monte\s*carlo|project)\b/.test(lower)) return { kind: "ui_simulate", symbol: sym };
+  if (sym && /^(?:please\s+)?(?:simulate|run\s+(?:a\s+)?(?:simulation|monte\s*carlo)|open\s+(?:the\s+)?simulation)\b/.test(lower)) return { kind: "ui_simulate", symbol: sym };
   if (sym && /\b(open|show|drawer|details?)\b/.test(lower) && symbols.length === 1 && text.length < 40) return { kind: "ui_open", symbol: sym };
 
   // tab switch
@@ -356,7 +357,8 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
     const liveQuote = liveQuoteMap.get(sym.toUpperCase());
     const livePrice = asFinite(qPrice(liveQuote));
     try {
-      const bars = mergeLivePriceIntoBars(await getHistory(sym, "1y", "1d"), liveQuote);
+      // Indicators use observed daily bars; extended-hours spot anchors scenarios only.
+      const bars = await getHistory(sym, "1y", "1d");
       const closes = extractCloses(bars);
       const vols = extractVolumes(bars);
       if (closes.length < 30) {
@@ -371,8 +373,10 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const sma20v = sma(closes, 20); const sma50v = sma(closes, 50); const sma200v = sma(closes, 200);
       const rsi14 = rsi(closes, 14);
       const annVol = stdev(logReturnsLocal(closes)) * Math.sqrt(252) * 100;
-      const vol20 = vols.length > 20 ? mean(vols.slice(-20)) : null;
-      const volZ = vol20 ? (vols[vols.length - 1] - vol20) / (stdev(vols.slice(-20)) || 1) : null;
+      const volumeBaseline = vols.slice(-21, -1);
+      const vol20 = volumeBaseline.length === 20 ? mean(volumeBaseline) : null;
+      const volumeSd = stdev(volumeBaseline);
+      const volZ = vol20 != null && volumeSd > 0 ? (vols[vols.length - 1] - vol20) / volumeSd : null;
       const Pmax = asFinite(liveQuote?.fiftyTwoWeekHigh) ?? Math.max(...closes); const Pmin = asFinite(liveQuote?.fiftyTwoWeekLow) ?? Math.min(...closes);
       const distHigh = (last / Pmax - 1) * 100; const distLow = (last / Pmin - 1) * 100;
       const regime = sma200v ? (last > sma200v ? "BULL" : "BEAR") : "UNKNOWN";
@@ -387,10 +391,10 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const parts: string[] = [];
       parts.push(`### ${sym}${liveQuote?.shortName ? ` (${liveQuote.shortName})` : ""} — ${thesisDir.toUpperCase()} (${regime} regime)`);
       if (livePrice != null) {
-        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current ${quoteSessionLabel(liveQuote)} price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}. This exact spot is injected into the latest bar and is the anchor for every dollar calculation below.`);
+        parts.push(`**[LATEST AVAILABLE QUOTE]** Current ${quoteSessionLabel(liveQuote)} price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}. Daily indicators use observed historical closes; this spot anchors the forward scenario only.`);
         parts.push(`**Thesis:** ${sym} prints **$${r(livePrice)}** with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
       } else {
-        parts.push(`**[LIVE VERIFIED — Yahoo Finance]** Current quote unavailable from Yahoo right now; no current dollar price is being printed.`);
+        parts.push(`**[LATEST AVAILABLE QUOTE]** Current quote unavailable from Yahoo right now; no current dollar price is being printed.`);
         parts.push(`**Thesis:** Indicator stack uses the latest available Yahoo daily bar with **RSI ${r(rsi14, 1)}** and **${pct(annVol, 1)} ann. vol**. Trend tape is ${thesisDir}; behavioral read is ${beh?.regime ?? "—"}.`);
       }
       parts.push("");
@@ -404,14 +408,13 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       }
       if (oracle) {
         const o = oracle.master;
-        parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift prob ${r(oracle.diagnostics.regime_shift,2)} · avalanche risk ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)}${livePrice != null ? ` vs verified spot ${r(last)}` : " (latest daily-history basis)"}.`);
+        parts.push(`**[ORACLE100]** Ψ psychology ${r(o.psychology,3)} · ℐ information ${r(o.information,3)} · ε execution ${r(o.execution,3)} · 𝐒₉₉ final ${r(o.final_signal,3)} · next-bar drift ${pct(o.next_price_drift*100,2)} · regime-shift heuristic ${r(oracle.diagnostics.regime_shift,2)} · avalanche heuristic ${r(oracle.diagnostics.avalanche_risk,2)} · anchor ${r(oracle.diagnostics.P_anchor)}${livePrice != null ? ` vs verified spot ${r(last)}` : " (latest daily-history basis)"}.`);
         // META-STATE (formulas 176–210 + upgrades 1–10): MAD-scrubbed, fat-tail safe.
-        const cleanedCloses = madScrub(closes);
-        const meta = computeMetaState(cleanedCloses, o, {
+        const meta = computeMetaState(closes, o, {
           behavioral: beh ? (beh.reflexivity_corr ?? 0) : 0,
           regimeProbs: [0.35, 0.30, 0.20, 0.15],
         });
-        parts.push(`**[META Ω*]** A* **${r(meta.A_star,3)}** · Ω* **${r(meta.Omega_star,3)}** · P(up) ${pct(meta.P_up*100,0)} · E[R]₆₀d ${pct(meta.E_R_60d*100,2)} · BC ${r(meta.BC,2)} · DQ ${r(meta.DQ,2)} · CSA ${r(meta.CSA,2)} · RU ${r(meta.RU,2)} · Risk ${r(meta.Risk,2)} · edge ${r((meta as any).DirectionalEdge,3)} · **TradeScore ${r(meta.TradeScore,4)} → ${meta.Action}**. (A* = regime-adj alpha; Ω* = tanh(Ω′ + A* + C + Conf − U); TradeScore = P(up)·E[R]·BC·DQ·CSA·(1−Risk)·Ω*.)`);
+        parts.push(`**[META Ω*]** A* **${r(meta.A_star,3)}** · Ω* **${r(meta.Omega_star,3)}** · P(up) ${pct(meta.P_up*100,0)} · E[R]₆₀d ${pct(meta.E_R_60d*100,2)} · dispersion score ${r(meta.BC,2)} · DQ proxy ${r(meta.DQ,2)} · signal agreement proxy ${r(meta.CSA,2)} · RU ${r(meta.RU,2)} · Risk ${r(meta.Risk,2)} · edge ${r((meta as any).DirectionalEdge,3)} · **TradeScore ${r(meta.TradeScore,4)} → ${meta.Action}**. (A* = regime-adj alpha; Ω* = tanh(Ω′ + A* + C + Conf − U); TradeScore = P(up)·E[R]·BC·DQ·CSA·(1−Risk)·Ω*.)`);
 
         // UVETA — recursive cognitive synthesis on top of the same signals.
         const perspectives = buildPerspectives({
@@ -420,12 +423,10 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
           behReflexivity: beh?.reflexivity_corr ?? 0,
           metaEdge: (meta as any).DirectionalEdge ?? 0,
         });
-        const lastRet = closes.length > 1 ? Math.log(closes[closes.length-1]/closes[closes.length-2]) : 0;
         const uv = uvetaStep({
           perspectives,
           prevUpsilon: o.final_signal,
-          actualReturn: lastRet,
-          predictedRet: o.next_price_drift,
+          // No prior, out-of-sample forecast is stored here: do not invent prediction error.
         });
         const topAttn = Object.entries(uv.attention).sort((a,b) => b[1]-a[1]).slice(0,3)
           .map(([k,v]) => `${k} ${r(v,2)}`).join(" · ");
@@ -435,27 +436,25 @@ async function synthTicker(symbols: string[], deep: boolean): Promise<string> {
       const recentRets = logReturnsLocal(closes).slice(-90);
       const dailyVol = stdev(recentRets);
       const dailyMean = mean(recentRets.slice(-60));
-      const rawDrift = oracle ? dailyMean * 60 + oracle.master.next_price_drift * Math.sqrt(60) * 0.35 : ((m?.hist ?? 0) > 0 ? dailyMean * 60 + 0.03 : dailyMean * 60 - 0.02);
+      // Historical mean log return is the drift estimator. Oracle scores are not calibrated drift.
+      const rawDrift = dailyMean * 60;
       const driftCap = Math.min(0.35, Math.max(0.06, dailyVol * Math.sqrt(60) * 0.75 + 0.06));
       const drift = Math.max(-driftCap, Math.min(driftCap, rawDrift));
       const horizonVol = dailyVol * Math.sqrt(60);
       const anchorSpot = livePrice ?? last;
-      const upTarget = anchorSpot * Math.exp(drift + horizonVol * 0.7);
-      const dnTarget = anchorSpot * Math.exp(drift - horizonVol * 0.9);
-      const baseTarget = anchorSpot * Math.exp(drift);
-      const trendScore = (sma50v ? (last > sma50v ? 1 : -1) : 0) * 0.5 + ((m?.hist ?? 0) > 0 ? 0.5 : -0.5);
-      const pUp = Math.max(0.1, Math.min(0.8, 0.5 + (oracle?.master.final_signal ?? 0) * 0.22 + Math.tanh(drift * 4) * 0.12 + trendScore * 0.07));
-      const pDn = Math.max(0.05, Math.min(0.6, 1 - pUp - 0.25));
-      const pBase = Math.max(0.05, 1 - pUp - pDn);
+      const scenario = lognormalSummary(anchorSpot, drift, horizonVol ** 2);
+      const upTarget = scenario.p95;
+      const dnTarget = scenario.p05;
+      const baseTarget = scenario.median;
       parts.push(livePrice != null
-        ? `**[SCENARIOS — 60d horizon]** Anchor spot **$${r(anchorSpot)}** · Bull band ~$${r(upTarget)} (${pct(pUp*100,0)}) · Base band ~$${r(baseTarget)} (${pct(pBase*100,0)}) · Bear band ~$${r(dnTarget)} (${pct(pDn*100,0)}). These are volatility-bounded probability bands from the live spot, not a fabricated exact future price — ${pct((1-Math.abs((oracle?.master.final_signal ?? 0)))*100,0)} epistemic uncertainty remaining.`
-        : `**[SCENARIOS — 60d horizon]** Dollar targets paused because Yahoo live quote is unavailable. Directional probabilities only: Bull ${pct(pUp*100,0)} · Base ${pct(pBase*100,0)} · Bear ${pct(pDn*100,0)}.`);
+        ? `**[SCENARIOS — 60d horizon]** Anchor spot **$${r(anchorSpot)}** · Model median $${r(baseTarget)} · 5th–95th percentile interval $${r(dnTarget)}–$${r(upTarget)} · model P(end above spot) ${pct(scenario.pUp*100,1)}. Assumes independent normally distributed daily log returns, historical volatility and capped historical drift; 60 trading sessions, not calendar days. These are uncalibrated model estimates, not guaranteed coverage or price predictions.`
+        : `**[SCENARIOS — 60d horizon]** Dollar targets paused because Yahoo live quote is unavailable. No current-price scenario is published without a quote.`);
       parts.push(`**[RISK GEOMETRY]** ann. vol ${pct(annVol,1)} · downside dev ${pct(downsideDeviation(closes),1)} · MDD ${dd ? pct(dd.dd_pct,1) : "—"} · regime ${regime}. Fragility ${rsi14 != null && rsi14 > 70 ? "elevated (overbought)" : rsi14 != null && rsi14 < 30 ? "elevated (oversold cascade)" : "moderate"}.`);
       parts.push(`**[ASYMMETRY]** Reward/risk ~ ${r((upTarget-anchorSpot)/Math.max(anchorSpot-dnTarget,0.01),2)}× with current setup. ${distHigh > -3 ? "Near 52w high — breakout vs. exhaustion choice." : distLow < 5 ? "Near 52w low — capitulation vs. continuation choice." : "Mid-range — momentum-driven."}.`);
       blocks.push(parts.join("\n"));
     } catch (e) {
       blocks.push(livePrice != null
-        ? `### ${sym}${liveQuote?.shortName ? ` (${liveQuote.shortName})` : ""}\n**[LIVE VERIFIED — Yahoo Finance]** Current price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}.\n\nHistorical indicator stack unavailable right now (${String(e).slice(0,120)}), so Oracle is not producing RSI/MACD/scenarios for this symbol until Yahoo history is available.`
+        ? `### ${sym}${liveQuote?.shortName ? ` (${liveQuote.shortName})` : ""}\n**[LATEST AVAILABLE QUOTE]** Current price **$${r(livePrice)}**${qChangePct(liveQuote) != null ? ` (${pct(qChangePct(liveQuote),2)})` : ""}${liveQuote?.currency ? ` ${liveQuote.currency}` : ""}.\n\nHistorical indicator stack unavailable right now (${String(e).slice(0,120)}), so Oracle is not producing RSI/MACD/scenarios for this symbol until Yahoo history is available.`
         : `### ${sym}\n_Could not fetch live quote or history — ${String(e).slice(0,140)}._`);
     }
   }
@@ -573,7 +572,7 @@ META-STATE FORMULAS YOU MUST USE BY NAME WHEN A PACKET CONTAINS THEM
  • Regime-aware trust thresholds: Crisis 0.80 · Fear 0.70 · Neutral 0.55 · Greed 0.60 · Euphoria 0.75.
 
 WHAT YOU RESPOND TO
- • If a CONTEXT PACKET is provided below, every number/ticker/tag in it is GROUND TRUTH — preserve exactly, never invent prices or tickers not in the packet. Layer interpretation, cross-signal synthesis, named biases, reflexivity reasoning, and the META-STATE numbers on top.
+ • If a CONTEXT PACKET is provided below, observed numbers must be preserved; modeled statistics, proxies, default inputs and assumptions are NOT independently verified facts, never invent prices or tickers not in the packet. Layer interpretation, cross-signal synthesis, named biases, reflexivity reasoning, and the META-STATE numbers on top.
   • If no packet, still answer fully from your reasoning and general knowledge. Keep simple questions simple; do not force market jargon onto arithmetic, definitions, translation, or casual chat. End with a relevant follow-up only when it helps.
  • **CRITICAL — NEVER fabricate a stock price.** If you name a ticker and the packet does not contain its price, OMIT the dollar number entirely (say "current price pending live feed verification" instead of guessing "~$24.12"). A post-processor will inject verified prices automatically — do not invent placeholders like "~$24.12" or "$43.15".
   • For stock-price / forecast / technical-analysis questions, use packet prices and indicators exactly. Do not write "live feed pending" if the packet has a [LIVE VERIFIED] line. Dollar scenario bands must be described as probabilistic bands anchored to the verified spot, never as certain predictions.
@@ -607,7 +606,13 @@ CONVERSATION FIRST
  • Use the conversation history for context: pronouns like "it", "that one", "same thing" refer to what was discussed before.
  • Match answer length to the question — short question, short answer.
 
-You are always-on. Speak with grounded conviction.`;
+ACCURACY RULES
+ • Use computed packet indicators; never invent missing inputs, confidence, backtest accuracy, causal evidence or current news.
+ • Show formulas, units, inputs and intermediate results for requested calculations. Separate percent from percentage points, arithmetic from log returns, and trading sessions from calendar days.
+ • Historical volatility, dispersion scores, proxy data quality and agreement among correlated signals are NOT Bayesian confidence or measured forecast accuracy.
+ • Oracle100 and UVETA are uncalibrated heuristic scores, not learned models. Defaults for sentiment, order depth, rates and options are assumptions, not observations. Do not claim causality or use forward scores as prior predictions.
+ • Do not convert heuristic scores into guaranteed returns or specific timing. Explain material missing data and model assumptions briefly.
+You are always-on. Speak in proportion to the evidence.`;
 
 // Build a compact (~<=6KB) context packet from the deterministic engine based on
 // the detected intent. This packet is what the LLM grounds its answer in.
@@ -689,7 +694,8 @@ function extractUIAction(text: string): { text: string; ui_actions: any[] } {
 // any "$NN.NN" token that appears shortly after each ticker, and append an
 // authoritative "LIVE VERIFIED PRICES" footer that the user can always trust.
 async function verifyPricesInText(text: string, seedSymbols: string[] = []): Promise<string> {
-  const tickers = Array.from(new Set([...seedSymbols, ...extractKnownSymbols(text)].map((s) => s.toUpperCase())))
+  // Prefer user-resolved symbols; analytical headers such as META are not companies.
+  const tickers = Array.from(new Set((seedSymbols.length ? seedSymbols : extractSymbols(text.replace(/\[[^\]]*\]/g, ""))).map((s) => s.toUpperCase())))
     // Guard against stray fragments of formatted numbers/timestamps ("1", "Z", "5B").
     .filter((s) => (s.startsWith("^") || s.length >= 2) && /[A-Z^]/.test(s) && !/^\d/.test(s))
     .slice(0, 8);
@@ -711,21 +717,15 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
   }
   if (live.size === 0) return text;
 
-  let out = text;
-  for (const [sym, info] of live) {
-    const priceStr = `$${info.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-    // Replace any "~?$NN(.NN)?" within a 0–140 char window AFTER the ticker mention.
-    const re = new RegExp(`(\\b${sym}\\b[^$\\n]{0,140}?)~?\\$\\s*\\d+(?:\\.\\d+)?`, "g");
-    out = out.replace(re, (_m, pre) => `${pre}${priceStr}`);
-  }
+  const out = text;
 
   const footer = [
     ``, ``, `---`,
-    `**[LIVE VERIFIED PRICES — multi-feed cross-check @ ${new Date().toISOString().slice(11,19)}Z]**`,
+    `**[LATEST AVAILABLE PRICES — retrieved @ ${new Date().toISOString().slice(11,19)}Z]**`,
     ...Array.from(live.entries()).map(([s, v]) =>
       `- **${s}**${v.name ? ` (${v.name})` : ""}: $${v.price.toLocaleString(undefined,{maximumFractionDigits:2})}${v.chg != null ? ` (${v.chg >= 0 ? "+" : ""}${v.chg.toFixed(2)}%)` : ""} — ${v.session}${v.prev != null ? `, prev close $${v.prev.toLocaleString(undefined,{maximumFractionDigits:2})}` : ""}${v.src ? ` [${v.src}]` : ""}`
     ),
-    `*Any prices above the line that conflict with this block are stale — trust this footer.*`,
+    `*Retrieval time is not the exchange tick time. Quotes may be delayed; scenario levels are estimates, not current quotes.*`,
   ].join("\n");
   return out + footer;
 }
@@ -757,15 +757,12 @@ function requiresDeterministicMarketData(intent: Intent): boolean {
 function localBasicAnswer(query: string): string | null {
   const q = query.trim();
   const lower = q.toLowerCase();
-  const arithmetic = q.match(/^\s*what\s+is\s+([0-9+\-*/().\s]+)\??\s*$/i) ?? q.match(/^\s*([0-9+\-*/().\s]+)=?\s*$/);
+  const arithmetic = q.match(/^\s*(?:what\s+is|calculate|compute)\s+([0-9+\-*/().^\s]+)\??\s*$/i) ?? q.match(/^\s*([0-9+\-*/().^\s]+)=?\s*$/);
   if (arithmetic) {
     const expr = arithmetic[1].trim();
-    if (/^[0-9+\-*/().\s]+$/.test(expr) && expr.length <= 80) {
-      try {
-        const value = Function(`"use strict"; return (${expr});`)();
-        if (typeof value === "number" && Number.isFinite(value)) return `${expr} = **${r(value, 6).replace(/\.0+$/, "")}**`;
-      } catch {}
-    }
+    const value = evaluateArithmetic(expr);
+    return value == null ? "That expression is invalid or has no finite result; check parentheses and division by zero."
+      : `${expr} = **${Number(value.toPrecision(14)).toLocaleString("en-US", { maximumSignificantDigits: 14 })}**`;
   }
   if (/\b(what is|define|explain)\b.*\b(inflation|inflacion|inflación)\b/i.test(lower)) {
     return "**Inflation** is a sustained rise in the general price level, which means each unit of currency buys less over time. Main drivers: demand running hotter than supply, higher input costs, money/credit expansion, supply shocks, and expectations feeding into wages/prices.";
@@ -898,7 +895,7 @@ async function callModel(
     const gateway = createLovableAiGatewayProvider(key);
     const result = await generateText({
       model: gateway(model),
-      temperature: 0.35,
+      temperature: 0.1,
       abortSignal: AbortSignal.timeout(timeoutMs),
       messages: [{ role: "system", content: systemMsg }, ...history],
     });
@@ -937,7 +934,7 @@ async function callLLM(
     ``,
     `=== CONSENSUS ADJUDICATION MODE ===`,
     `Independent frontier models each answered the user's last message. Produce ONE final answer that:`,
-    `1. Keeps only claims supported by the CONTEXT PACKET or agreed by both drafts.`,
+    `1. Keeps factual claims only when supported by evidence. Agreement between drafts is not verification. Recalculate arithmetic independently.`,
     `2. Drops or explicitly flags anything the drafts contradict each other on.`,
     `3. Uses ONLY packet numbers for prices, levels and stats — never a draft's number that is absent from the packet.`,
     `4. Preserves the user's language, keeps the strongest reasoning from each draft, and removes duplication.`,

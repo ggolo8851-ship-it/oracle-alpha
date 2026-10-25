@@ -10,72 +10,27 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiTopFindsRouteImport } from './routes/api/top-finds'
-import { Route as ApiTickerRouteImport } from './routes/api/ticker'
-import { Route as ApiSnapshotRouteImport } from './routes/api/snapshot'
-import { Route as ApiSimulateRouteImport } from './routes/api/simulate'
-import { Route as ApiSearchRouteImport } from './routes/api/search'
-import { Route as ApiRegionRouteImport } from './routes/api/region'
-import { Route as ApiPulseRouteImport } from './routes/api/pulse'
-import { Route as ApiPrivateEquityRouteImport } from './routes/api/private-equity'
-import { Route as ApiNextBigRouteImport } from './routes/api/next-big'
-import { Route as ApiNewsRouteImport } from './routes/api/news'
-import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiAlertsRouteImport } from './routes/api/alerts'
+import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiNewsRouteImport } from './routes/api/news'
+import { Route as ApiNextBigRouteImport } from './routes/api/next-big'
+import { Route as ApiPrivateEquityRouteImport } from './routes/api/private-equity'
+import { Route as ApiPulseRouteImport } from './routes/api/pulse'
+import { Route as ApiRegionRouteImport } from './routes/api/region'
+import { Route as ApiSearchRouteImport } from './routes/api/search'
+import { Route as ApiSimulateRouteImport } from './routes/api/simulate'
+import { Route as ApiSnapshotRouteImport } from './routes/api/snapshot'
+import { Route as ApiTickerRouteImport } from './routes/api/ticker'
+import { Route as ApiTopFindsRouteImport } from './routes/api/top-finds'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiTopFindsRoute = ApiTopFindsRouteImport.update({
-  id: '/api/top-finds',
-  path: '/api/top-finds',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiTickerRoute = ApiTickerRouteImport.update({
-  id: '/api/ticker',
-  path: '/api/ticker',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSnapshotRoute = ApiSnapshotRouteImport.update({
-  id: '/api/snapshot',
-  path: '/api/snapshot',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSimulateRoute = ApiSimulateRouteImport.update({
-  id: '/api/simulate',
-  path: '/api/simulate',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSearchRoute = ApiSearchRouteImport.update({
-  id: '/api/search',
-  path: '/api/search',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRegionRoute = ApiRegionRouteImport.update({
-  id: '/api/region',
-  path: '/api/region',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPulseRoute = ApiPulseRouteImport.update({
-  id: '/api/pulse',
-  path: '/api/pulse',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPrivateEquityRoute = ApiPrivateEquityRouteImport.update({
-  id: '/api/private-equity',
-  path: '/api/private-equity',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiNextBigRoute = ApiNextBigRouteImport.update({
-  id: '/api/next-big',
-  path: '/api/next-big',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiNewsRoute = ApiNewsRouteImport.update({
-  id: '/api/news',
-  path: '/api/news',
+const ApiAlertsRoute = ApiAlertsRouteImport.update({
+  id: '/api/alerts',
+  path: '/api/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
@@ -83,9 +38,54 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAlertsRoute = ApiAlertsRouteImport.update({
-  id: '/api/alerts',
-  path: '/api/alerts',
+const ApiNewsRoute = ApiNewsRouteImport.update({
+  id: '/api/news',
+  path: '/api/news',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiNextBigRoute = ApiNextBigRouteImport.update({
+  id: '/api/next-big',
+  path: '/api/next-big',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPrivateEquityRoute = ApiPrivateEquityRouteImport.update({
+  id: '/api/private-equity',
+  path: '/api/private-equity',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPulseRoute = ApiPulseRouteImport.update({
+  id: '/api/pulse',
+  path: '/api/pulse',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRegionRoute = ApiRegionRouteImport.update({
+  id: '/api/region',
+  path: '/api/region',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSearchRoute = ApiSearchRouteImport.update({
+  id: '/api/search',
+  path: '/api/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSimulateRoute = ApiSimulateRouteImport.update({
+  id: '/api/simulate',
+  path: '/api/simulate',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSnapshotRoute = ApiSnapshotRouteImport.update({
+  id: '/api/snapshot',
+  path: '/api/snapshot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTickerRoute = ApiTickerRouteImport.update({
+  id: '/api/ticker',
+  path: '/api/ticker',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTopFindsRoute = ApiTopFindsRouteImport.update({
+  id: '/api/top-finds',
+  path: '/api/top-finds',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -208,74 +208,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/top-finds': {
-      id: '/api/top-finds'
-      path: '/api/top-finds'
-      fullPath: '/api/top-finds'
-      preLoaderRoute: typeof ApiTopFindsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ticker': {
-      id: '/api/ticker'
-      path: '/api/ticker'
-      fullPath: '/api/ticker'
-      preLoaderRoute: typeof ApiTickerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/snapshot': {
-      id: '/api/snapshot'
-      path: '/api/snapshot'
-      fullPath: '/api/snapshot'
-      preLoaderRoute: typeof ApiSnapshotRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/simulate': {
-      id: '/api/simulate'
-      path: '/api/simulate'
-      fullPath: '/api/simulate'
-      preLoaderRoute: typeof ApiSimulateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/search': {
-      id: '/api/search'
-      path: '/api/search'
-      fullPath: '/api/search'
-      preLoaderRoute: typeof ApiSearchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/region': {
-      id: '/api/region'
-      path: '/api/region'
-      fullPath: '/api/region'
-      preLoaderRoute: typeof ApiRegionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/pulse': {
-      id: '/api/pulse'
-      path: '/api/pulse'
-      fullPath: '/api/pulse'
-      preLoaderRoute: typeof ApiPulseRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/private-equity': {
-      id: '/api/private-equity'
-      path: '/api/private-equity'
-      fullPath: '/api/private-equity'
-      preLoaderRoute: typeof ApiPrivateEquityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/next-big': {
-      id: '/api/next-big'
-      path: '/api/next-big'
-      fullPath: '/api/next-big'
-      preLoaderRoute: typeof ApiNextBigRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/news': {
-      id: '/api/news'
-      path: '/api/news'
-      fullPath: '/api/news'
-      preLoaderRoute: typeof ApiNewsRouteImport
+    '/api/alerts': {
+      id: '/api/alerts'
+      path: '/api/alerts'
+      fullPath: '/api/alerts'
+      preLoaderRoute: typeof ApiAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/chat': {
@@ -285,11 +222,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/alerts': {
-      id: '/api/alerts'
-      path: '/api/alerts'
-      fullPath: '/api/alerts'
-      preLoaderRoute: typeof ApiAlertsRouteImport
+    '/api/news': {
+      id: '/api/news'
+      path: '/api/news'
+      fullPath: '/api/news'
+      preLoaderRoute: typeof ApiNewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/next-big': {
+      id: '/api/next-big'
+      path: '/api/next-big'
+      fullPath: '/api/next-big'
+      preLoaderRoute: typeof ApiNextBigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/private-equity': {
+      id: '/api/private-equity'
+      path: '/api/private-equity'
+      fullPath: '/api/private-equity'
+      preLoaderRoute: typeof ApiPrivateEquityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/pulse': {
+      id: '/api/pulse'
+      path: '/api/pulse'
+      fullPath: '/api/pulse'
+      preLoaderRoute: typeof ApiPulseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/region': {
+      id: '/api/region'
+      path: '/api/region'
+      fullPath: '/api/region'
+      preLoaderRoute: typeof ApiRegionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/search': {
+      id: '/api/search'
+      path: '/api/search'
+      fullPath: '/api/search'
+      preLoaderRoute: typeof ApiSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/simulate': {
+      id: '/api/simulate'
+      path: '/api/simulate'
+      fullPath: '/api/simulate'
+      preLoaderRoute: typeof ApiSimulateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/snapshot': {
+      id: '/api/snapshot'
+      path: '/api/snapshot'
+      fullPath: '/api/snapshot'
+      preLoaderRoute: typeof ApiSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ticker': {
+      id: '/api/ticker'
+      path: '/api/ticker'
+      fullPath: '/api/ticker'
+      preLoaderRoute: typeof ApiTickerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/top-finds': {
+      id: '/api/top-finds'
+      path: '/api/top-finds'
+      fullPath: '/api/top-finds'
+      preLoaderRoute: typeof ApiTopFindsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -313,3 +313,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

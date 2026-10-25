@@ -78,9 +78,8 @@ export function sortino(closes: number[], rfAnnualPct = 4.3, periods = 252): num
   if (r.length < 10) return null;
   const rfPer = Math.log(1 + rfAnnualPct / 100) / periods;
   const excess = r.map((x) => x - rfPer);
-  const neg = excess.filter((x) => x < 0);
-  if (!neg.length) return null;
-  const dd = Math.sqrt(neg.reduce((s, x) => s + x * x, 0) / neg.length);
+  const neg = excess.map((x) => Math.min(0, x));
+  const dd = Math.sqrt(neg.reduce((s, x) => s + x * x, 0) / excess.length);
   if (dd === 0) return null;
   return (mean(excess) / dd) * Math.sqrt(periods);
 }
@@ -89,7 +88,7 @@ export function calmar(closes: number[], periods = 252): number | null {
   if (closes.length < 30) return null;
   const dd = maxDrawdown(closes);
   if (!dd || dd.dd_pct === 0) return null;
-  const years = closes.length / periods;
+  const years = (closes.length - 1) / periods;
   const cagr = (Math.pow(closes[closes.length - 1] / closes[0], 1 / years) - 1) * 100;
   return cagr / Math.abs(dd.dd_pct);
 }
@@ -138,7 +137,7 @@ export function rsi(closes: number[], period = 14): number | null {
     avgG = (avgG * (period - 1) + g) / period;
     avgL = (avgL * (period - 1) + l) / period;
   }
-  if (avgL === 0) return 100;
+  if (avgL === 0) return avgG === 0 ? 50 : 100;
   const rs = avgG / avgL;
   return 100 - 100 / (1 + rs);
 }
@@ -171,7 +170,7 @@ export function bollinger(closes: number[], period = 20, mult = 2): { mid: numbe
     upper,
     lower,
     bandwidth: ((upper - lower) / m) * 100,
-    pctB: (price - lower) / (upper - lower),
+    pctB: upper === lower ? 0.5 : (price - lower) / (upper - lower),
   };
 }
 
