@@ -299,6 +299,69 @@ async function fetchStockAnalysisQuote(sym: string): Promise<Quote | null> {
   }
 }
 
+// ─── source 0: Nasdaq official quote API (US equities/ETFs) ───────────────
+
+async function fetchNasdaqOne(sym: string): Promise<Quote | null> {
+  for (const cls of ["stocks", "etf"]) {
+    try {
+      const r = await fetch(
+        `https://api.nasdaq.com/api/quote/${encodeURIComponent(sym)}/info?assetclass=${cls}`,
+        { headers: { ...UA, Origin: "https://www.nasdaq.com", Referer: "https://www.nasdaq.com/" } },
+      );
+      if (!r.ok) continue;
+      const j = (await r.json()) as any;
+      const d = j?.data;
+      const p = d?.primaryData;
+      const price = num(p?.lastSalePrice);
+      if (!d || !finiteNumber(price)) continue;
+      const s = d?.secondaryData;
+      const sPrice = num(s?.lastSalePrice);
+      const status = String(d?.marketStatus ?? "").toUpperCase();
+      const label = String(s?.label ?? p?.label ?? "").toUpperCase();
+      // During extended hours primaryData is the live pre/after print and
+      // secondaryData holds the regular-session close.
+      const ext = finiteNumber(sPrice);
+      const isPre = ext && (status.includes("PRE") || label.includes("PRE"));
+      const isPost = ext && !isPre && (status.includes("AFTER") || status.includes("POST") || label.includes("AFTER"));
+      const regular = ext && (isPre || isPost) ? sPrice! : price;
+      const regPct = num((ext && (isPre || isPost) ? s : p)?.percentageChange);
+      const regChg = num((ext && (isPre || isPost) ? s : p)?.netChange);
+      const [lo52, hi52] = String(d?.keyStats?.fiftyTwoWeekHighLow?.value ?? "").split("-").map(num);
+      const [dhi, dlo] = String(d?.keyStats?.dayrange?.value ?? "").split("-").map(num);
+      return {
+        symbol: sym,
+        shortName: d.companyName,
+        longName: d.companyName,
+        regularMarketPrice: regular,
+        regularMarketChange: regChg,
+        regularMarketChangePercent: regPct,
+        regularMarketPreviousClose: regChg != null ? regular - regChg : undefined,
+        marketState: isPre ? "PRE" : isPost ? "POST" : status.includes("OPEN") || status === "MARKET OPEN" ? "REGULAR" : "CLOSED",
+        preMarketPrice: isPre ? price : undefined,
+        preMarketChangePercent: isPre ? num(p?.percentageChange) : undefined,
+        postMarketPrice: isPost ? price : undefined,
+        postMarketChangePercent: isPost ? num(p?.percentageChange) : undefined,
+        regularMarketVolume: num(p?.volume),
+        regularMarketDayHigh: dhi,
+        regularMarketDayLow: dlo,
+        fiftyTwoWeekHigh: hi52,
+        fiftyTwoWeekLow: lo52,
+        currency: "USD",
+        exchange: d.exchange,
+        source: "nasdaq",
+      };
+    } catch { /* try next class */ }
+  }
+  return null;
+}
+
+async function fetchNasdaqQuotes(symbols: string[]): Promise<Map<string, Quote>> {
+  const out = new Map<string, Quote>();
+  const res = await Promise.all(symbols.slice(0, 30).map((s) => fetchNasdaqOne(s).catch(() => null)));
+  res.forEach((q, i) => { if (q) out.set(symbols[i], q); });
+  return out;
+}
+
 // ─── public quote API ─────────────────────────────────────────────────────
 
 /** Drop cached quote entries so the next read hits the live feeds. */
@@ -328,11 +391,20 @@ export async function getQuotes(symbols: string[], opts: { fresh?: boolean } = {
     else missing.push(s);
   }
 
-  // 1) one batched CNBC request for everything still missing
-  for (let i = 0; i < missing.length; i += 25) {
-    const chunk = missing.slice(i, i + 25);
-    const batch = await fetchCnbcQuotes(chunk);
-    for (const [sym, q] of batch) resolved.set(sym, q);
+  // 0+1) Nasdaq official quotes for US equities/ETFs (authoritative price),
+  // fetched in parallel with one batched CNBC request for extras/other assets.
+  const nasdaqSyms = missing.filter((s) => saSlug(s));
+  const [nasdaq, ...cnbcBatches] = await Promise.all([
+    fetchNasdaqQuotes(nasdaqSyms),
+    ...Array.from({ length: Math.ceil(missing.length / 25) }, (_, k) =>
+      fetchCnbcQuotes(missing.slice(k * 25, k * 25 + 25)),
+    ),
+  ]);
+  for (const batch of cnbcBatches) for (const [sym, q] of batch) resolved.set(sym, q);
+  for (const [sym, nq] of nasdaq) {
+    const c = resolved.get(sym);
+    // Nasdaq price wins; CNBC only fills fields Nasdaq does not publish.
+    resolved.set(sym, c ? { ...c, ...Object.fromEntries(Object.entries(nq).filter(([, v]) => v !== undefined)) } as Quote : nq);
   }
 
   // 2) Yahoo per-symbol for whatever CNBC could not price
