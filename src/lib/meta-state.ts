@@ -20,7 +20,8 @@ function boundedHorizonDrift(closes: number[], oracleDailyDrift: number, horizon
   const rets = logReturns(closes).slice(-Math.min(90, Math.max(20, closes.length - 1)));
   const meanDaily = mean(rets);
   const dailyVol = stdev(rets);
-  const raw = meanDaily * horizon + oracleDailyDrift * Math.sqrt(horizon) * 0.35;
+  // The behavioral score is not a calibrated daily return estimator.
+  const raw = meanDaily * horizon;
   const cap = Math.min(0.35, Math.max(0.06, dailyVol * Math.sqrt(horizon) * 0.75 + 0.06));
   return clamp(raw, -cap, cap);
 }
