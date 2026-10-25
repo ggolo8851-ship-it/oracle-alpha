@@ -205,7 +205,7 @@ function detectIntent(raw: string): Intent {
   // UI actions
   if (sym && /\b(add|pin|put|stick|throw|track|watch)\b[\s\S]*\b(bag|watch|watchlist|list)\b/.test(lower)) return { kind: "ui_add_bag", symbol: sym, symbols };
   if (sym && /\b(remove|unpin|drop|delete)\b[\s\S]*\b(bag|watch)\b/.test(lower)) return { kind: "ui_remove_bag", symbol: sym, symbols };
-  if (sym && /\b(simulate|simulation|scenario|monte\s*carlo|project)\b/.test(lower)) return { kind: "ui_simulate", symbol: sym };
+  if (sym && /^(?:please\s+)?(?:simulate|run\s+(?:a\s+)?(?:simulation|monte\s*carlo)|open\s+(?:the\s+)?simulation)\b/.test(lower)) return { kind: "ui_simulate", symbol: sym };
   if (sym && /\b(open|show|drawer|details?)\b/.test(lower) && symbols.length === 1 && text.length < 40) return { kind: "ui_open", symbol: sym };
 
   // tab switch
@@ -716,12 +716,7 @@ async function verifyPricesInText(text: string, seedSymbols: string[] = []): Pro
   }
   if (live.size === 0) return text;
 
-  let out = text;
-  for (const [sym, info] of live) {
-    const priceStr = `$${info.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-    // Never overwrite targets, stops, market caps, or investment amounts.
-    // A fresh quote can change after calculation; append it without corrupting the analysis.
-  }
+  const out = text;
 
   const footer = [
     ``, ``, `---`,
@@ -766,7 +761,7 @@ function localBasicAnswer(query: string): string | null {
     const expr = arithmetic[1].trim();
     const value = evaluateArithmetic(expr);
     return value == null ? "That expression is invalid or has no finite result; check parentheses and division by zero."
-      : `${expr} = **${Number(value.toPrecision(15)).toLocaleString("en-US", { maximumSignificantDigits: 15 })}**`;
+      : `${expr} = **${Number(value.toPrecision(14)).toLocaleString("en-US", { maximumSignificantDigits: 14 })}**`;
   }
   if (/\b(what is|define|explain)\b.*\b(inflation|inflacion|inflación)\b/i.test(lower)) {
     return "**Inflation** is a sustained rise in the general price level, which means each unit of currency buys less over time. Main drivers: demand running hotter than supply, higher input costs, money/credit expansion, supply shocks, and expectations feeding into wages/prices.";
