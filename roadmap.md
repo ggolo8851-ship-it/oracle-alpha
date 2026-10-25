@@ -1,0 +1,3 @@
+- [ ] Correct chatbot arithmetic and financial indicator edge cases.
+- [ ] Make scenario calculations reproducible and distinguish estimates from observed data.
+- [ ] Verify calculations and chatbot responses; apply required package update.

@@ -9,6 +9,7 @@
 //   TradeScore — final unified decision score
 // Plus MAD-based outlier scrubbing for fat-tailed price series.
 import { extractCloses, logReturns, mean, stdev } from "./indicators";
+import { lognormalSummary } from "./analysis-math";
 
 const tanh = Math.tanh;
 const sigm = (x: number) => 1 / (1 + Math.exp(-x));
@@ -89,10 +90,13 @@ export function bayesianConfidence(scenarioPrices: number[]): number {
 
 // ── 200: regime uncertainty (entropy of regime probs) ──────────────────────
 export function regimeUncertainty(probs: number[]): number {
-  const ps = probs.filter((p) => p > 0);
-  if (!ps.length) return 0;
+  const valid = probs.filter((p) => Number.isFinite(p) && p >= 0);
+  const total = valid.reduce((s, p) => s + p, 0);
+  if (total === 0) return 1;
+  if (valid.length <= 1) return 0;
+  const ps = valid.filter((p) => p > 0).map((p) => p / total);
   const H = -ps.reduce((s, p) => s + p * Math.log(p), 0);
-  return clamp01(H / Math.log(ps.length || 2));
+  return clamp01(H / Math.log(valid.length));
 }
 
 // ── 176–178: A_t*  — regime-adjusted alpha
@@ -155,8 +159,7 @@ export function tradeScore(args: {
 
 // Convenience: realized risk from cleaned close series.
 export function realizedRisk(closes: number[]): number {
-  const cleaned = madScrub(closes);
-  const ann = stdev(logReturns(cleaned)) * Math.sqrt(252);
+  const ann = stdev(logReturns(closes)) * Math.sqrt(252);
   return clamp01(ann / 0.8); // 80% ann vol = max risk
 }
 
@@ -169,28 +172,26 @@ export function computeMetaState(closes: number[], oracle: {
   regimeProbs?: number[]; csaSignals?: number[]; docs?: Parameters<typeof docDataQuality>[0][];
   causal?: number;
 }) {
-  const cleaned = madScrub(closes);
+  if (closes.length < 2 || closes.some((p) => !Number.isFinite(p) || p <= 0)) {
+    throw new Error("At least two positive finite closes required");
+  }
+  // Never drop close levels: deleting a crash rewrites chronology and hides risk.
+  const cleaned = closes;
   const last = cleaned[cleaned.length - 1];
   const drift = boundedHorizonDrift(cleaned, oracle.next_price_drift, 60); // bounded 60-bar log-return
-  const vol = stdev(logReturns(cleaned)) * Math.sqrt(252);
-
-  // Quick Monte Carlo around drift for BC
-  const mc: number[] = [];
-  for (let i = 0; i < 200; i++) {
-    const z = randNorm();
-    mc.push(last * Math.exp(drift + vol * 0.4 * z));
-  }
-  const bc = bayesianConfidence(mc);
-  const pUp = clamp01(0.5 + oracle.final_signal * 0.25 + (sigm(drift * 4) - 0.5) * 0.3);
-  const eR = drift; // expected log-return over horizon
+  const variance = stdev(logReturns(cleaned).slice(-90)) ** 2 * 60;
+  const scenario = lognormalSummary(last, drift, variance);
+  const bc = scenario.dispersionConfidence;
+  const pUp = scenario.pUp;
+  const eR = scenario.expectedReturn;
   const risk = realizedRisk(closes);
 
   const csa = opts?.csaSignals?.length
     ? crossSourceAgreement(opts.csaSignals)
-    : 0.6;
+    : 0.5;
   const dq = opts?.docs?.length
     ? mean(opts.docs.map(docDataQuality))
-    : 0.7;
+    : 0.5;
   const bcAdj = clamp01(bc * csa); // upgrade 6: BC' = BC × CSA
   const ru = regimeUncertainty(opts?.regimeProbs ?? [0.4, 0.3, 0.2, 0.1]);
 
@@ -233,14 +234,6 @@ export function computeMetaState(closes: number[], oracle: {
     DirectionalEdge: round(directionalEdge, 3),
     Action: action,
   };
-}
-
-function randNorm(): number {
-  // Box-Muller
-  let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
 function round(n: number, d = 3): number {
