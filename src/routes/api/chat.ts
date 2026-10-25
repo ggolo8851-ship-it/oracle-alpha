@@ -694,7 +694,8 @@ function extractUIAction(text: string): { text: string; ui_actions: any[] } {
 // any "$NN.NN" token that appears shortly after each ticker, and append an
 // authoritative "LIVE VERIFIED PRICES" footer that the user can always trust.
 async function verifyPricesInText(text: string, seedSymbols: string[] = []): Promise<string> {
-  const tickers = Array.from(new Set([...seedSymbols, ...extractKnownSymbols(text)].map((s) => s.toUpperCase())))
+  // Prefer user-resolved symbols; analytical headers such as META are not companies.
+  const tickers = Array.from(new Set((seedSymbols.length ? seedSymbols : extractSymbols(text.replace(/\[[^\]]*\]/g, ""))).map((s) => s.toUpperCase())))
     // Guard against stray fragments of formatted numbers/timestamps ("1", "Z", "5B").
     .filter((s) => (s.startsWith("^") || s.length >= 2) && /[A-Z^]/.test(s) && !/^\d/.test(s))
     .slice(0, 8);

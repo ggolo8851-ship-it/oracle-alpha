@@ -17,8 +17,8 @@ const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
 function boundedHorizonDrift(closes: number[], oracleDailyDrift: number, horizon = 60): number {
-  const rets = logReturns(closes).slice(-Math.min(90, Math.max(20, closes.length - 1)));
-  const meanDaily = mean(rets);
+  const rets = logReturns(closes).slice(-90);
+  const meanDaily = mean(rets.slice(-60));
   const dailyVol = stdev(rets);
   // The behavioral score is not a calibrated daily return estimator.
   const raw = meanDaily * horizon;
