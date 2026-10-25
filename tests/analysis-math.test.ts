@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateArithmetic, lognormalSummary } from "./analysis-math";
-import { bollinger, calmar, logReturns, mean, rsi, sortino, stdev } from "./indicators";
-import { computeMetaState, realizedRisk, regimeUncertainty } from "./meta-state";
+import { evaluateArithmetic, lognormalSummary } from "../src/lib/analysis-math";
+import { bollinger, calmar, logReturns, mean, rsi, sortino, stdev } from "../src/lib/indicators";
+import { computeMetaState, realizedRisk, regimeUncertainty } from "../src/lib/meta-state";
 
 describe("chatbot arithmetic", () => {
   test("evaluates precedence, parentheses, negatives and powers without code execution", () => {
